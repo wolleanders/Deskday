@@ -1,0 +1,21 @@
+type User @table {
+  displayName: String!
+  createdAt: Timestamp!
+  email: String
+  photoUrl: String
+}
+
+type DailySchedule @table {
+  user: User!
+  date: Date!
+  createdAt: Timestamp!
+}
+
+type AgendaEntry @table {
+  dailySchedule: DailySchedule!
+  time: Int! # Represents the hour (0-23)
+  description: String!
+  positionInHour: Int! # 1, 2, or 3
+  createdAt: Timestamp!
+  isCompleted: Boolean
+}

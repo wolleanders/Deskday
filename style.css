@@ -1,0 +1,756 @@
+/* =========================
+   FONT (lokal, variable)
+   ========================= */
+@font-face {
+  font-family: "Geist Mono";
+  src: url("./assets/fonts/Geist_Mono/GeistMono-VariableFont_wght.ttf") format("truetype-variations"),
+       url("./assets/fonts/Geist_Mono/GeistMono-VariableFont_wght.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* =========================
+   THEME TOKENS
+   - Dark = Default
+   - Light überschreibt nur Variablen
+   ========================= */
+:root {
+  /* Palette */
+  --bg: #070707;
+  --surface: #000000b4;
+  --fg: #e9e9e9;
+  --muted: #444444;
+  --line: #2a2a2a;
+  --ex-windows: #131313;
+  --ex-windows-border: #1a1a1a;
+  --accent: #ffffff;
+  --accent-2: #d7c957; /* optionale Taktlinie (gelblich) */
+  --shadow: rgba(0,0,0,.4);
+  --box: #0e0e0e;
+  color-scheme: dark;
+
+  /* Typo */
+  --font-ui: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --fs-14: 14px;
+  --fs-16: 16px;
+
+  /* Layout */
+  --radius: 12px;
+  --topbar-h: 48px;
+  --hour-height: 88px;
+
+  /* Content / Items */
+  --items-left: 62px;
+  --items-right: 16px;
+  --items-top: 2px;
+  --items-bottom: 2px;
+  --txt-line: 22px; /* Zeilenhöhe Anzeige */
+  --txt-gap: 2px;
+
+  user-select: none;
+}
+
+/* Beispiel-Override für Light Mode (nur Tokens, gleiche Regeln bleiben) */
+html[data-theme="light"] {
+  --bg: #000000;
+  --surface: #ffffff;
+  --fg: #111111;
+  --muted: #8d8d8d;
+  --ex-windows: #fafafa;
+  --ex-windows-border: #ffffff;
+  --line: #dddddd;
+  --accent: #111111;
+  --accent-2: #37a0f0; /* bläuliche Taktlinie */
+  --shadow: rgba(0,0,0,.1);
+  --box: #ebebeb;
+  color-scheme: light;
+}
+
+/* =========================
+   GLOBAL BASE
+   ========================= */
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  text-rendering: geometricPrecision;
+  transition: background-color .25s linear, color .25s linear;
+}
+
+body, .header, .time-grid__hour, .icon-btn { transition: color .2s, background-color .2s, border-color .2s; }
+
+/* =========================
+   FRAME / SURFACE
+   ========================= */
+#windowClip {
+  position: fixed;
+  inset: 0;
+  border-radius: var(--radius);
+  overflow: hidden;                 /* erster Clip */
+  clip-path: inset(0 round var(--radius)); /* zweiter Clip (GPU-stabil) */
+  background: transparent;
+  isolation: isolate;               /* eigener Compositing-Kontext */
+}
+
+#surface {
+  position: absolute;
+  inset: 1px;
+  background: var(--surface);
+  border-radius: inherit;
+  transform: translateZ(0);         /* bessere Kanten */
+  
+}
+
+.nudge { transform: translate(0.5px, 0.5px); }
+
+.topbar, #viewport, #timetable, .drag-overlay { border-radius: inherit;}
+
+/* =========================
+   TOPBAR
+   ========================= */
+.topbar {
+  height: var(--topbar-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;          /* Titel zentriert */
+  position: relative;
+  border-bottom: 1px solid var(--line);
+  -webkit-app-region: drag;
+  z-index: 10;
+  cursor: auto;
+  margin-bottom: 10px;
+  border-radius: 0;
+}
+
+.title {
+  font-size: 18px;
+  color: var(--fg);
+  font-weight: 400;
+  font-family: var(--font-ui);
+  margin-left: 145px;
+}
+
+.day {
+  letter-spacing: 0.01em; /* etwas offener */
+  color: var(--muted);
+}
+
+.slash {
+  display: inline-block;
+  margin-left: -0.30em;    /* enger an den letzten Buchstaben */
+  transform: translateX(-0.02em);
+  color: var(--muted);
+  margin-right: -10px;
+}
+
+.icon-btn {
+  position: absolute;
+  right: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  -webkit-app-region: no-drag;
+  width: 28px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 20px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  pointer-events: auto;
+  user-select: none;
+  transition: color 0.2s ease;
+}
+.icon-btn:hover { color: var(--fg); }
+.icon-btn:focus-visible { outline: none; }
+
+/* =========================
+   VIEWPORT / TABLE
+   ========================= */
+#viewport {
+  position: relative;
+  height: calc(100% - var(--topbar-h));
+  overflow: hidden;
+  z-index: 1;
+}
+
+#timetable {
+  position: relative;
+  width: 100%;
+  will-change: transform;
+  opacity: 0;
+  transition: opacity .45s ease;
+  transition: height 320ms cubic-bezier(.22,.61,.36,1);
+}
+#timetable.ready { opacity: 1; }
+
+/* =========================
+   DRAG OVERLAY
+   ========================= */
+.drag-overlay {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+  z-index: 999;
+}
+
+.drag-overlay.hidden {
+  display: none !important;
+  pointer-events: none !important;
+}
+
+/* =========================
+   HOUR ROW
+   ========================= */
+.hour {
+  position: relative;
+  height: var(--hour-height, 88px);
+  padding-left: 64px;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  margin: 0;
+  border: 0;
+  overflow: hidden;
+  transition: height 320ms cubic-bezier(.22,.61,.36,1);
+}
+
+/* Mittel-Linie der Stunde */
+.hour .line {
+  position: absolute;
+  left: 64px;
+  right: 30px;
+  top: 0;
+  height: 1px;
+  background: var(--line);
+}
+
+.hour .line-left {
+  position: absolute;
+  left: 23px;
+  width: 10px;
+  right: 30px;
+  top: 0;
+  height: 1px;
+  background: var(--line);
+}
+
+
+/* Label (Zeit) */
+.hour .label {
+  position: absolute;
+  left: 38px;
+  top: -4px;
+  font-size: 16px;
+  color: var(--line);
+  font-weight: 300;
+  font-family: var(--font-ui);
+}
+
+/*.hour .label[data-ampm]::after {
+  content: attr(data-ampm);
+  font-size: 10px;
+  font-weight: 300;
+  opacity: 0.6;
+  margin-left: 0.3ch;
+  vertical-align:bottom;
+  position:inherit;
+  top: -1px;
+}*/
+
+/* Container für Einträge */
+.hour .items {
+  position: absolute;
+  left: 65px;
+  right: var(--items-right);
+  bottom: var(--items-bottom);
+  top: 0;
+  height: 80px;
+  display: block;
+}
+
+/* Anzeige-Text (gerendert) – max. 3 Zeilen */
+.hour .txt {
+  display: block;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  white-space: pre-line;          /* \n & weiche Umbrüche */
+  word-break: break-word;
+  line-height: var(--txt-line);
+  padding: 6px 8px 6px 8px;      /* etwas links Luft */
+  overflow: hidden;               /* kein Scroll */
+  color: var(--line);              /* muted Standard */
+  font-size: var(--fs-16);
+  -webkit-box-orient: vertical;
+  text-overflow: ellipsis;
+  line-clamp: 3;
+  margin-top: 4px;
+  font-weight: 200;
+  position: relative;
+}
+
+/* Editor (Textarea) – exakt 3 Zeilen */
+.hour .txt-input {
+  display: none;
+  width: 95.4%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px 6px 12px;
+  background: var(--muted-2);
+  border: 1px solid var(--muted-2);
+  border-radius: 6px;
+  color: var(--fg);
+  font-size: var(--fs-16);
+  line-height: var(--txt-line);
+  resize: none;
+  outline: none;
+  overflow: hidden;
+  margin-top: 5px;
+  height: calc(var(--txt-line) * 3 + 12px);
+  max-height: calc(var(--txt-line) * 3 + 12px);
+}
+.txt-input::placeholder { color: var(--muted); }
+
+/* Jetzt-Linie (optional sichtbar über JS) */
+.now-line {
+  position: absolute;
+  left: 64px; right: 30px; height: 1px;
+  background: var(--accent-2);
+  color: var(--accent-2);
+  opacity: 1;
+  pointer-events: none;
+  z-index: 9999;
+  display: block;
+}
+
+/* Aktuelle Stunde */
+.hour.current .line  { background: var(--fg); height: 2px; }
+.hour.current .line-left  { background: var(--fg); height: 2px; }
+.hour.current .label { margin-top: 2.5px;font-size: 17px; color: var(--accent); font-weight: 500; text-decoration: underline; text-underline-offset: 3px;display: flex; flex-direction: column; line-height: 1;}
+.hour.current .txt   { margin-left:-1px; width: 95.5%; color: var(--fg); opacity: 1; font-weight: 500; background-color: var(--box); border-radius: 8px;}
+/* am/pm nur für aktuelle Stunde und UNTER der Zahl */
+.hour.current .label::after {
+  content: attr(data-ampm);
+  font-size: 10px;          /* kleiner als die Zahl */
+  text-transform: uppercase;
+  margin-top: 5px;          /* Abstand nach unten */
+  opacity: 0.8;             /* optional etwas dezenter */
+  font-weight: 400;
+  text-decoration: underline;
+}
+/* =========================
+   OPTIONS MENU
+   ========================= */
+.options { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); }
+
+.options-menu {
+  position: absolute;
+  right: 0px;
+  top: 20px;
+  width: 38px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  z-index: 50;
+  background: var(--ex-windows);
+  border: 1px solid var(--ex-windows-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px var(--shadow);
+}
+.options-menu.hidden { display: none; }
+
+.opt-item {
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  padding: 8px 12px;
+  font-size: var(--fs-16);
+  color: var(--muted);
+  border-radius: 6px;
+  min-width: 35px;
+  font-family: var(--font-ui);
+}
+.opt-item:hover { color: var(--fg); transition: color .2s ease; }
+
+/* =========================
+   EDIT- / TOOLBAR-BUTTONS
+   ========================= */
+.tei-btn,
+.st-btn,
+.colEmp-btn {
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
+  user-select: none;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--line);
+  font-size: 40px;
+  display: grid;
+  place-items: center;
+}
+
+.chevron-ic{
+  display:block;
+  transition:transform .2s ease;
+  transform-box: fill-box;          /* fix für manche Browser */
+  transform-origin: 50% 50%;        /* rotiere um die Mitte */
+}
+
+/* wenn expanded -> rotiere nach oben */
+.colEmp-btn[aria-expanded="false"] .chevron-ic{
+  transform:rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce){
+  .chevron-ic{ transition:none; }
+}
+
+.tei-btn {
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  width: 28px; height: 24px;
+}
+.tei-btn:hover { color: var(--fg); transition: color .2s ease; }
+.tei-btn::before { content: "\270E"; }     /* ✎ */
+.tei-btn:hover::before { content: "\00D7"; } /* × */
+
+.st-btn  { position: absolute; left: 40px; width: 24px; height: 24px; margin-top: -2px;}
+.st-btn:hover { color: var(--fg); transition: color .2s ease, background .2s ease; }
+
+.colEmp-btn { position: absolute; left: 70px; width: 24px; height: 24px; }
+.colEmp-btn:hover { color: var(--fg); transition: color .2s ease, background .2s ease;}
+
+/* Im Editor sichtbar */
+body.editor-mode .tei-btn,
+body.editor-mode .st-btn,
+body.editor-mode .colEmp-btn { display: grid !important; }
+
+/* =========================
+   SUMMARY (Collapsed)
+   ========================= */
+.hour .summary { display: none; color: #b5b5b5; font-size: 13px; padding-left: 64px; }
+.hour .summary .dots { opacity: .6; }
+.hour.collapsed .items { visibility: hidden; }
+.hour.collapsed .summary { display: none; }
+.hour.collapsed.empty .summary { color: #8c8c8c; }
+
+/* Chevron pro Stunde */
+.hour .chev {
+  position: absolute;
+  left: 32px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 16px;
+  color: #6f6f6f;
+  cursor: pointer;
+  user-select: none;
+  opacity: 0;
+  transition: opacity .15s ease;
+}
+.hour:hover .chev { opacity: .9; }
+.hour.collapsed .chev { transform: translateY(-50%) rotate(-90deg); }
+
+/* =========================
+   SEE OVERLAY
+   ========================= */
+.see.hidden { display: none; }
+
+.see {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  backdrop-filter: blur(1px);
+  z-index: 9997;
+  font-family: var(--font-ui);
+  margin-top: -200px;
+  background: rgba(0,0,0,.35);
+}
+
+.see-card {
+  width: min(180px, 92vw);
+  max-height: 100px;
+  padding: 28px 24px;
+  background: var(--ex-windows);
+  color: var(--fg);
+  border: 1px solid var(--ex-windows-border);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.see-title { font-size: 22px; margin-top: -18px; margin-bottom: -10px; letter-spacing: .04em; }
+.see-row   { display: flex; align-items: center; justify-content: center; gap: 24px; margin: 8px 0; }
+.see-sep   { font-size: 14px; color: var(--muted); margin-left: -15px; margin-right: -15px;}
+
+.see-label  { position: relative; width: 120px; display: inline-block; }
+.see-input  { font-family: var(--font-ui);width: 100%; text-align: center; font-size: 40px; background: transparent; color: var(--fg); border: 0; outline: 0; padding: 0px 0 -5px; caret-color: var(--fg); }
+.see-underline { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--fg); opacity: .4; border-radius: 2px;}
+
+.see-hint { color: var(--accent); opacity: .25; font-size: 12px; line-height: 1.3; margin: 10px 0 18px; margin-left: -10px; margin-right: -10px; letter-spacing: .04em; }
+
+.see-btn {
+  font-family: var(--font-ui);
+  display: grid;
+  width: 230px;
+  font-size: 24px;
+  padding: 10px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--ex-windows-border);
+  background: var(--fg);
+  color: var(--surface);
+  box-shadow: inset 0 0 0 999px var(--fg);
+  cursor: pointer;
+  opacity: 1;
+  margin-left: -25px;
+  transition: color .3s ease, background .7s ease, opacity .5s ease;
+}
+.see-btn[disabled] {
+  font-family: var(--font-ui);
+  opacity: .35;
+  cursor: not-allowed;
+  box-shadow: inset 0 0 0 999px var(--ex-windows);
+  background: var(--ex-windows);
+  color: var(--muted);
+  transition: color .3s ease, background .7s ease;;
+}
+
+/* =========================
+   INTERACTION MODES
+   ========================= */
+
+/* =========================
+   VISIBILITY / EDITOR STATES
+   ========================= */
+
+   /* global utility */
+.hidden, [hidden] { display: none !important; }
+
+/* Standard: Buttons unsichtbar */
+.tei-btn, .st-btn, .colEmp-btn { display: none; }
+
+/* Globale Hide-Utility (funktioniert exakt wie vorher) */
+.hidden {
+  display: none !important;
+}
+
+/* Nur im Editor sichtbare Buttons */
+body.editor-mode .tei-btn {
+  display: grid !important;
+}
+
+body.editor-mode .st-btn {
+  display: grid !important;
+}
+
+body.editor-mode .colEmp-btn {
+  display: grid !important;
+}
+
+.tei-btn{
+  color:var(--muted); font-size:16px;
+}
+.tei-btn:hover{ color:var(--fg) }
+.hidden{ display:none !important; }
+
+.st-btn{
+  color:var(--muted); font-size:16px;
+}
+
+.st-btn:hover{color:var(--fg); transition: color 0.2s ease, background 0.2s ease;}
+
+/* ----------- Collapse -------------*/
+.colEmp-btn{
+  color:var(--muted); font-size:16px;
+}
+
+/* (optional) falls du noch andere Edit-only Bereiche hast */
+.edit-only { display: none; }
+body.editor-mode .edit-only { display: block; }
+body:not(.editor-mode) .entry         { pointer-events: none; }
+body:not(.editor-mode) .entry-input   { display: none !important; }
+
+/* alternativ rein über CSS sichtbar machen: */
+body.editor-mode .tei-btn{ display:grid !important; }
+body.editor-mode .st-btn{ display:grid !important; }
+body.editor-mode .colEmp-btn{ display:grid !important; }
+
+/* =========================
+   VISIBILITY / EDITOR STATES
+   ========================= */
+.hidden {
+  display: none !important;
+}
+
+/* Edit-Mode Visibility Override */
+body.editor-mode .tei-btn,
+body.editor-mode .st-btn,
+body.editor-mode .colEmp-btn {
+  display: grid !important;
+}
+
+/* Failsafe: Wenn Editor AUS ist, zeig Editor-UI nicht */
+body:not(.editor-mode) #teiBtn,
+body:not(.editor-mode) #stBtn,
+body:not(.editor-mode) #opt-collapse-empties,
+body:not(.editor-mode) .chev {
+  display: none !important;
+}
+
+/* Editor-Modus: sichtbar (überschreibt .hidden nur, wenn du .hidden NICHT per JS setzt) */
+body.editor-mode .tei-btn,
+body.editor-mode .st-btn,
+body.editor-mode .colEmp-btn { display: grid !important; }
+
+
+/* Settings Overlay */
+.set{
+  position: fixed; inset: 0; display: grid; place-items: center;
+  background: rgba(0,0,0,.35); z-index: 1000;backdrop-filter: blur(1px);
+}
+.set.hidden{ display:none; }
+
+.set-card{
+  width: 280px; background: var(--ex-windows); color: var(--fg);
+  border: 1px solid var(--ex-windows-border); border-radius: 14px;
+  padding: 16px 16px 20px; box-shadow: 0 10px 30px var(--shadow);
+  -webkit-app-region: no-drag;
+  position: relative; /* enable absolute positioning of close/cloud */
+}
+.set-title{ color: var(--accent); margin: 0 0 8px; font-weight: 700; }
+.set-section{ color: var(--accent); margin-top: 12px; padding-top: 8px; border-top: 1px solid rgb(46, 46, 46); }
+.set-subtitle{ font-size:13px; color:#414141; letter-spacing:.08em; text-transform:uppercase; margin:4px 0 8px; }
+.set-row{ display:flex; align-items:center; justify-content:space-between; padding:6px 0; }
+.set-label{ color: var(--accent); }
+.set-check{ width:16px; height:16px; accent-color: var(--fg); background: var(--surface); border:1px solid var(--line); border-radius:4px; }
+
+
+.set-actions{ display:flex; margin-top:14px; justify-content: flex-end;  /* push login/signout right */ gap: 12px;margin-top: 12px;}
+.set-btn{ border:0; border-radius:10px; padding:10px 10px; width: 100px; background:var(--fg); color:var(--ex-windows); font-weight:700; cursor:pointer; font-family: var(--font-ui);}
+.set-btn--ghost{ background:transparent; color:var(--fg); border:1px solid var(--line); }
+.set-hint{ margin:8px 0 0; font-size:12px; color:var(--muted); text-align:right; display: block;}
+
+/* Ensure cloud pseudo decoration rule does not push layout (override earlier margin rules) */
+.set-card .cloud-indicator.cloud-off::after {
+  /* reuse existing but keep it small */
+  top: 50%;
+  left: 25%;
+  right: 25%;
+  height: 2px;
+}
+
+/* Verstecke evtl. die mittige cloud in .set-actions (falls vorhanden) */
+.set-actions .cloud-indicator { display: none; }
+
+/* Keep the Sign out button style, but make sure it's anchored right */
+#setLogin {
+  /* keep your existing visual style but ensure it's right-aligned */
+  margin-left: 0;
+  box-shadow: none;
+}
+
+/* close: slightly left of the cloud, square button */
+.set-card #setClose {
+  position: absolute;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  line-height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  font-size: 14px !important;
+  padding: 0 !important;
+  border: none !important;
+  cursor: pointer !important;
+  top: 10px;
+}
+/* cloud: top-right (small, subtle) */
+.set-card #cloudStatus,
+.set-card > .cloud-indicator {
+  position: absolute;
+  right: 40px !important;
+  font-size: 14px !important;
+  opacity: 0.85 !important;
+  color: var(--muted) !important;
+  background: transparent !important;
+  padding: 4px 6px !important;
+  margin: 0px;
+  top: 13px;
+  pointer-events: none; /* purely decorative - prevents accidental clicks */
+}
+/* precise cloud + close placement inside the set-card (most specific selector to override earlier rules) */
+.set-card > .cloud-indicator,
+.set-card #setClose {
+  position: absolute !important;
+  z-index: 60 !important;
+  -webkit-app-region: no-drag !important;
+}
+
+/* close hover */
+.set-card #setClose:hover {
+  color: var(--fg) !important;
+  background: rgba(255,255,255,0.04) !important;
+}
+
+/* small mobile/compact tweak: if the card becomes narrow, ensure top icons don't overlap the title */
+@media (max-width: 360px) {
+  .set-card { padding-top: 20px; }
+  #setClose { right: 52px; }
+  .set-card .cloud-indicator { right: 16px; font-size: 13px; }
+}
+
+/* optional "by" in the bottom-right */
+.set-card .byline {
+  right: 12px;
+  bottom: 22px;        /* previously 12px — increase to raise it */
+  font-size: 11px;
+  color: var(--muted);
+  position: absolute;
+  pointer-events: none;
+  margin-right: 11px;
+}
+
+.cloud-indicator {
+  border: none;
+  background: transparent;
+  position: absolute;
+  display: inline;
+  cursor: default;
+  font-size: 18px;
+  opacity: .6;
+  padding: 0;
+  margin-left: 130px;
+  margin-right: 40px;
+}
+
+.cloud-indicator.cloud-on {
+  opacity: 1;
+}
+
+.cloud-indicator.cloud-off::after {
+  content: "";
+  position: absolute;
+  top: 45%;
+  left: 10%;
+  right: 10%;
+  height: 2px;
+  background: currentColor;
+  transform: rotate(-25deg);
+  color: var(--ex-windows);
+  font-size: 80px;
+}
+

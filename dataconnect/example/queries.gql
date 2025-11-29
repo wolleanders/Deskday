@@ -1,0 +1,24 @@
+mutation CreateUser($displayName: String!, $email: String, $photoUrl: String) @auth(level: USER) {
+  user_insert(data: {displayName: $displayName, email: $email, photoUrl: $photoUrl, createdAt_expr: "request.time"})
+}
+
+query GetDailySchedule($id: UUID!) @auth(level: USER) {
+  dailySchedule(id: $id) {
+    id
+    date
+    agendaEntries_on_dailySchedule {
+      id
+      time
+      description
+      isCompleted
+    }
+  }
+}
+
+mutation CreateAgendaEntry($dailyScheduleId: UUID!, $time: Int!, $description: String!, $isCompleted: Boolean!, $positionInHour: Int!) @auth(level: USER) {
+  agendaEntry_insert(data: {dailyScheduleId: $dailyScheduleId, time: $time, description: $description, isCompleted: $isCompleted, positionInHour: $positionInHour, createdAt_expr: "request.time"})
+}
+
+mutation UpdateAgendaEntry($id: UUID!, $isCompleted: Boolean!) @auth(level: USER) {
+  agendaEntry_update(id: $id, data: {isCompleted: $isCompleted})
+}

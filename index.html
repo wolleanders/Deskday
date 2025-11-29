@@ -1,0 +1,209 @@
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <symbol id="i-bed" viewBox="0 0 24 24">
+  <g fill="none" stroke="currentColor" stroke-width="1.5"
+     stroke-linecap="round" stroke-linejoin="round">
+    <!-- Bettrahmen -->
+    <path d="M3 10v10M21 10v10"/>
+    <path d="M3 16h18"/>
+    <!-- Kopfkissen -->
+    <!-- Matratze -->
+    <path d="M9 13h12a0 0 0 0 1 0 0v3H9z"/>
+  </g>
+</symbol>
+
+  <symbol id="i-sun" viewBox="0 0 24 24">
+  <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="4"/>
+    <path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5L19 19M5 19l1.5-1.5M17.5 6.5L19 5"/>
+  </g>
+</symbol>
+<symbol id="i-moon" viewBox="0 0 24 24">
+  <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>
+  </g>
+</symbol>
+<symbol id="i-pencil" viewBox="0 0 24 24">
+  <path d="M3 17.25V21h3.75L17.81 9.94a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0L3 17.25z"
+        fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</symbol>
+<symbol id="i-chevron" viewBox="0 0 24 24">
+  <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+</symbol>
+</svg>
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval'"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <link rel="stylesheet" href="style.css" />
+  <title>Deskday Proto</title>
+</head>
+<!--  STARTUP Start/Ende Editor (SEE0) -->
+<div id="seeOverlay" class="see hidden" aria-modal="true" role="dialog">
+  <div class="see-card">
+    <h2 class="see-title">WAKE/ SLEEP</h2>
+
+    <div class="see-row">
+      <label class="see-label">
+        <input id="seeStart" class="see-input" type="text" inputmode="numeric" placeholder="5" maxlength="2" aria-label="Wake hour (24h)"/>
+        <span class="see-underline"></span>
+      </label>
+      <span class="see-sep"> till</span>
+      <label class="see-label">
+        <input id="seeEnd" class="see-input" type="text" inputmode="numeric" placeholder="22" maxlength="2" aria-label="Sleep hour (24h)"/>
+        <span class="see-underline"></span>
+      </label>
+    </div>
+
+    <p class="see-hint">DETERMINES START AND END TIME OF YOUR SCHEDULE<br/>(24 HOUR FORMAT)</p>
+
+    <button id="seeBuild" class="see-btn" disabled>BUILD SCHEDULE</button>
+  </div>
+</div>
+<!-- SETTINGS Overlay (SET) -->
+<div id="setOverlay" class="set hidden" role="dialog" aria-modal="true" aria-labelledby="setTitle">
+  <div class="set-card">
+    <h2 id="setTitle" class="set-title">Settings</h2>
+
+    <button id="setClose" class="set-close">&#x2715</button>
+    <button id="cloudStatus" class="cloud-indicator" aria-label="Cloud status" title="Local mode">
+    ☁︎
+    </button>
+  
+    <div class="set-section">
+      <div class="set-subtitle">UI</div>
+
+      <label class="set-row">
+        <span class="set-label">Light Mode</span>
+        <input id="setLight" class="set-check" type="checkbox">
+      </label>
+
+      <label class="set-row">
+        <span class="set-label">12h Format</span>
+        <input id="set12h" class="set-check" type="checkbox">
+      </label>
+    </div>
+
+    <div class="set-section">
+      <div class="set-subtitle">System</div>
+
+      <label class="set-row">
+        <span class="set-label">Allow autostart</span>
+        <input id="setAuto" class="set-check" type="checkbox">
+      </label>
+
+      <label class="set-row">
+        <span class="set-label">Always on top</span>
+        <input id="setAOT" class="set-check" type="checkbox">
+      </label>
+    </div>
+
+    <div class="set-actions">
+      
+      <button id="setLogin" data-auth-login="1" class="set-btn">Log in</button>
+    </div>
+    <!-- hint & footer -->
+     <div class="set-footer" style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+  <div class="set-footer-left">
+    <a href="#" style="color:var(--muted); font-size:12px; margin-right:10px;">Support</a>
+    <a href="#" style="color:var(--muted); font-size:12px;">Impressum</a>
+  </div>
+  <p id="setWho" class="set-hint" aria-live="polite"></p>
+  <div class="byline">by Zenith</div>
+  </div>
+</div>
+</div>
+<body>
+  <div id="windowClip">
+    <div id="surface">
+  <header class="topbar">
+    <!-- hidden TTE Button - Indikator -->
+    <button
+          id="teiBtn"
+          class="tei-btn hidden"
+          type="button"
+          aria-label="Exit Editor"
+          aria-pressed="true"
+          title="Exit Editor">
+    </button>
+<!-- hidden TTE Button -SET TIMETABLE -->
+    <button
+          id="stBtn"
+          class="st-btn hidden"
+          type="button"
+          aria-label="setTime Editor"
+          aria-pressed="false"
+          title="SetTime Editor">
+            <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+    <use href="#i-bed"></use>
+  </svg>
+    </button>
+  <!-- hidden Collapse all Empty -->
+<button
+  id="colEmpBtn"
+  class="colEmp-btn hidden"
+  type="button"
+  aria-label="Zeilen einklappen/ausklappen"
+  aria-expanded="false"              
+  aria-controls="collapseTarget"
+  title="Collapse/Expand">
+  <svg width="20" height="20"><use href="#i-chevron"></use></svg>
+</button>
+<div class="title">
+    <!-- Mitte: Day -->
+     <div class="date-display">
+      <span id="dayLabel" class="day"></span><span class="slash">/</span>
+      <span id="dateLabel" class="date">Day</span>
+    </div>
+    <!-- Mitte: Datum -->
+      <div class="date" id="dateLabel"></div>
+  </div>
+    
+  <!-- Menü -->
+  <div class="options">
+  <button id="optionsBtn"
+        class="icon-btn"
+        type="button"
+        aria-haspopup="true"
+        aria-expanded="false"
+        title="Optionen">
+  ⋮
+</button>
+
+    <div id="optionsMenu" class="options-menu hidden">
+      <button id="opt-te"
+          class="opt-item"
+          data-om-item
+          type="button"
+          aria-label="Table Editor"
+          aria-pressed="false"
+          title="Table Editor">
+      ✎
+      </button>
+        <button
+        class="opt-item"
+        id="opt-settings"
+        data-om-item>
+        ⚙︎
+      </button>
+      <button
+        class="opt-item"
+        id="opt-min"
+        data-om-item>
+        _
+      </button>
+    </div>
+  </div>
+
+  </header>
+  <div id="viewport"><div id="timetable"></div></div>
+  <!-- SETTINGS Overlay (SET) -->
+  <script type="module" src="renderer.js"></script>
+  
+  <div id="dragOverlay" class="drag-overlay hidden"></div>
+  </div>
+  </div>
+</body>
+</html>
