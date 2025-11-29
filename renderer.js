@@ -1215,11 +1215,6 @@ function installAuthMutationObserver() {
     }));
   });
 
-  // debug button
-  const dbg = document.createElement('button');
-  dbg.textContent = 'Debug auth'; dbg.style.position = 'fixed'; dbg.style.right = '8px'; dbg.style.bottom = '8px'; dbg.style.zIndex = 99999;
-  dbg.addEventListener('click', () => { console.log('auth.getCurrentUser()', window.auth?.getCurrentUser?.()); console.log('firebaseReady.isReady()', window.firebaseReady?.isReady?.()); console.log('Explicitly logging out flag:', window.__deskday_isExplicitlyLoggingOut); });
-  document.body.appendChild(dbg);
 
   console.timeEnd('[entry] boot');
   console.log('[entry] ready ✅');
