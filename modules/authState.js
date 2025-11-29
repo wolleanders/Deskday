@@ -55,7 +55,7 @@ export function handleAuthStateChange(user) {
         // Button-UI
         const displayName = user.displayName || user.email || 'User';
         if (loginBtn) {
-            loginBtn.textContent = `Sign out (${displayName})`;
+            loginBtn.textContent = `Sign out`;
             // Listener für den Logout-Prozess anhängen
             loginBtn.addEventListener('click', window.deskdayLogoutHandler);
         }

@@ -16,6 +16,7 @@
   "dependencies": {
     "@dataconnect/generated": "file:src/dataconnect-generated",
     "firebase": "^12.5.0",
+    "keytar": "^7.9.0",
     "node-fetch": "^2.7.0"
   }
 }

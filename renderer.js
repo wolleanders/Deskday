@@ -523,6 +523,165 @@ function applyRemoteData(data, { preserveMode = true } = {}) {
 
 const cloudStatusEl = document.getElementById('cloudStatus');
 
+// ------------------ Cloud: robust color-only fix ------------------
+// 1) Inject small CSS override to neutralize potential pseudo-element slashes
+(function ensureCloudCssOnce() {
+  if (document.getElementById('deskday-cloud-fix')) return;
+  const s = document.createElement('style');
+  s.id = 'deskday-cloud-fix';
+  s.textContent = `
+    /* hide any pseudo elements that draw a slash or overlay */
+    .cloud-indicator::before, .cloud-indicator::after { display: none !important; }
+
+    /* Ensure cloud-on looks full and readable; cloud-off muted */
+    .cloud-indicator.cloud-on { color: #ffffff !important; opacity: 1 !important; text-decoration: none !important; filter: none !important; }
+    .cloud-indicator.cloud-off { opacity: 0.6 !important; text-decoration: none !important; filter: none !important; }
+
+    /* defensive: ensure the glyph itself isn't dimmed by user-agent rules */
+    .cloud-indicator { text-decoration: none !important; }
+  `;
+  (document.head || document.documentElement).appendChild(s);
+})();
+
+// 2) Helper: set cloud element state (keeps original DOM, only styles + class + tooltip)
+function setCloudState(isCloud, user = null) {
+  const el = document.getElementById('cloudStatus') || document.querySelector('.cloud-indicator');
+  if (!el) return false;
+
+  const title = isCloud ? `Cloud mode (${user?.displayName || user?.email || 'Google user'})` : 'Local mode';
+
+  // Deterministic class
+  el.classList.toggle('cloud-on', !!isCloud);
+  el.classList.toggle('cloud-off', !isCloud);
+  try { window.__deskday_forceCloudInline?.(el, isCloud); } catch(e) {}
+
+  // Inline style enforcement (color white for cloud, reset for local)
+  try {
+    if (isCloud) {
+      el.style.color = '#ffffff';
+      el.style.opacity = '1';
+      el.style.textDecoration = 'none';
+    } else {
+      // remove forced white so CSS can decide; keep muted opacity
+      el.style.color = '';
+      el.style.opacity = '0.6';
+      el.style.textDecoration = 'none';
+    }
+  } catch (e) {
+    // ignore style failures
+  }
+
+  // Tooltip / accessibility
+  try { el.setAttribute('title', title); el.setAttribute('aria-label', title); } catch(e){}
+
+  // store desired state for observer
+  el.dataset.__deskday_want = isCloud ? 'cloud' : 'local';
+
+  // install a focused observer to re-assert if someone touches this exact element
+  installCloudElementObserver(el);
+
+  return true;
+}
+
+// ---- persistent cloud override: append last CSS + helper to set inline important ----
+(function installPersistentCloudOverride() {
+  const ID = 'deskday-cloud-latefix';
+  if (document.getElementById(ID)) return;
+
+  const css = `
+    /* strong override for the cloud (placed late) */
+    .set-card #cloudStatus.cloud-indicator.cloud-on,
+    .set-card > .cloud-indicator.cloud-on,
+    #cloudStatus.cloud-indicator.cloud-on,
+    .cloud-indicator.cloud-on {
+      color: #ffffff !important;
+      opacity: 1 !important;
+      text-decoration: none !important;
+      filter: none !important;
+    }
+    .set-card .cloud-indicator.cloud-off::after,
+    .set-card .cloud-indicator::after,
+    #cloudStatus::after {
+      display: none !important;
+    }
+    .set-card .cloud-indicator,
+    #cloudStatus { pointer-events: auto !important; }
+  `;
+
+  const node = document.createElement('style');
+  node.id = ID;
+  node.textContent = css;
+  // append _after_ initial UI render (try immediate head append; if head missing schedule)
+  const attach = () => (document.head || document.documentElement).appendChild(node);
+  if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', attach, { once: true });
+  } else {
+    attach();
+  }
+
+  // helper to set inline !important props (use when toggling state)
+  window.__deskday_forceCloudInline = function(el, isCloud) {
+    if (!el) el = document.getElementById('cloudStatus') || document.querySelector('.cloud-indicator');
+    if (!el) return false;
+    try {
+      if (isCloud) {
+        el.style.setProperty('color', '#ffffff', 'important');
+        el.style.setProperty('opacity', '1', 'important');
+      } else {
+        el.style.setProperty('opacity', '0.6', 'important');
+        el.style.removeProperty('color'); // allow stylesheet for local mode
+      }
+      return true;
+    } catch(e) { return false; }
+  };
+})();
+
+// 3) Focused MutationObserver that watches only the cloud element (lightweight)
+//    Re-applies inline style + class if the element gets modified.
+function installCloudElementObserver(targetEl) {
+  if (!targetEl) return;
+  if (targetEl.__deskday_cloud_observer_installed) return;
+  targetEl.__deskday_cloud_observer_installed = true;
+
+  const want = () => (targetEl.dataset.__deskday_want === 'cloud');
+
+  const mo = new MutationObserver((mutations) => {
+    // quick check: if class or style changed against our desired state, reassert
+    const shouldBeCloud = want();
+    const hasCloudOn = targetEl.classList.contains('cloud-on');
+
+    if (shouldBeCloud && !hasCloudOn) {
+      // re-apply cloud state
+      try { setCloudState(true, null); } catch(e){ console.warn('[cloud-obs] restore failed', e); }
+      return;
+    }
+    if (!shouldBeCloud && hasCloudOn) {
+      try { setCloudState(false, null); } catch(e){ /* ignore */ }
+      return;
+    }
+
+    // also ensure inline color/opacity remain correct
+    const computedOpacity = getComputedStyle(targetEl).opacity;
+    if (shouldBeCloud && computedOpacity !== '1') {
+      try { targetEl.style.opacity = '1'; targetEl.style.color = '#ffffff'; } catch(e){ }
+    }
+  });
+
+  mo.observe(targetEl, { attributes: true, attributeFilter: ['class', 'style', 'title', 'aria-label', 'data-*'] });
+
+  // keep a small timed cleanup: after 3s we assume the UI stabilized; we keep observer but it's fine
+  // (no heavy resource usage because it observes only one node)
+}
+
+
+// 4) Small convenience wrapper exposed for dev-testing
+window.__deskday_setCloudState = (mode, user) => {
+  try {
+    const isCloud = (mode === 'cloud' || mode === true);
+    return setCloudState(isCloud, user || null);
+  } catch(e) { return false; }
+};
+
 // ---------- Forceful / robust updateCloudStatus (replace existing) ----------
 function updateCloudStatus(mode, user) {
   const isCloud = (mode === 'cloud');
@@ -598,6 +757,56 @@ function startRealtimeSync(uid) {
   }
 }
 
+// --- robust helper: wait for cloud element then update it (idempotent) ---
+function waitForCloudEl(selector = '#cloudStatus, .cloud-indicator', timeoutMs = 2000) {
+  return new Promise((resolve) => {
+    const found = document.querySelector(selector);
+    if (found) return resolve(found);
+    const interval = 80;
+    let waited = 0;
+    const id = setInterval(() => {
+      const el = document.querySelector(selector);
+      if (el) {
+        clearInterval(id);
+        return resolve(el);
+      }
+      waited += interval;
+      if (waited >= timeoutMs) {
+        clearInterval(id);
+        return resolve(null);
+      }
+    }, interval);
+  });
+}
+
+async function ensureCloudUpdate(mode, user = null) {
+  // mode: 'cloud' or 'local'
+  const el = await waitForCloudEl();
+  if (!el) {
+    console.warn('[cloud] ensureCloudUpdate: cloud element not found (timeout)');
+    return false;
+  }
+  try {
+    const isCloud = (mode === 'cloud');
+    // deterministic: set classes and inline fallback
+    el.classList.toggle('cloud-on', isCloud);
+    el.classList.toggle('cloud-off', !isCloud);
+    el.style.opacity = isCloud ? '1' : '0.55';
+    el.style.textDecoration = 'none';
+    const title = isCloud ? `Cloud mode (${user?.displayName || user?.email || 'Google user'})` : 'Local mode';
+    el.title = title;
+    el.setAttribute('aria-label', title);
+    console.log('[cloud] ensureCloudUpdate applied ->', { id: el.id || null, className: el.className, title });
+    return true;
+  } catch (e) {
+    console.warn('[cloud] ensureCloudUpdate failed', e);
+    return false;
+  }
+}
+
+// expose for quick testing in devtools
+window.__deskday_forceCloud = (mode, user) => ensureCloudUpdate(mode, user);
+
 function stopRealtimeSync() {
   if (__rtUnsub) {
     try { __rtUnsub(); } catch (e) { console.warn('[realtime] unsub failed', e); }
@@ -621,18 +830,19 @@ function updateLoginButton(arg1, arg2) {
   }
   if (typeof state !== 'string') state = 'login';
 
-  // small summary for logs
   const userSummary = user ? { uid: user.uid, email: user.email, displayName: user.displayName } : null;
   console.log('[ui] updateLoginButton called ->', { state, user: userSummary });
 
   // PRIMARY target: element with id="setLogin"
   const el = document.getElementById('setLogin');
   if (!el) {
-    // fallback: nothing to update (avoid mass-updates that clobber other UI)
     console.warn('[ui] updateLoginButton: #setLogin not found, skipping UI update');
     try { updateCloudStatus(state === 'logout' ? 'cloud' : 'local', user); } catch(e) {}
     return;
   }
+
+  // mark element so delegated handlers / observers find it reliably
+  try { el.setAttribute('data-auth-login', '1'); } catch(e){}
 
   // reset
   el.disabled = false;
@@ -650,6 +860,8 @@ function updateLoginButton(arg1, arg2) {
   if (state === 'login') {
     el.textContent = 'Log in';
     el.disabled = false;
+    el.title = 'Log in';
+    el.setAttribute('aria-label', 'Log in');
     el.onclick = async (e) => {
       e?.preventDefault();
       try { el.disabled = true; await window.auth?.signInWithGoogle?.(); }
@@ -657,48 +869,47 @@ function updateLoginButton(arg1, arg2) {
       finally { el.disabled = false; }
     };
     try { updateCloudStatus('local', null); } catch(e) {}
-    // ensure the element is discoverable by delegated handler if present
-    try { el.setAttribute('data-auth-login', '1'); } catch(e){}
     return;
   }
 
-  // logout state
+  // logout state: visible text = generic "Sign out" (no name)
   if (state === 'logout') {
-  // Nur generischen Sign-out Text (kein Name)
-  el.textContent = 'Sign out';
-  el.title = 'Sign out';
-  el.setAttribute('aria-label', 'Sign out');
+    const label = user ? (user.displayName || user.email || '') : '';
+    el.textContent = 'Sign out';
+    const tooltip = label ? `Signed in as ${label}` : 'Sign out';
+    el.title = tooltip;
+    el.setAttribute('aria-label', tooltip);
 
-  el.onclick = async (e) => {
-    e?.preventDefault();
-    try {
-      el.disabled = true;
-      const cur = window.auth?.getCurrentUser?.();
-      if (cur) {
-        await window.auth?.signOut?.();
-        // UI sofort anpassen
-        updateLoginButton('login', null);
-      } else {
-        // Fallback: starte Login, falls kein currentUser
-        await window.auth?.signInWithGoogle?.();
+    el.onclick = async (e) => {
+      e?.preventDefault();
+      try {
+        el.disabled = true;
+        const cur = window.auth?.getCurrentUser?.();
+        if (cur) {
+          await window.auth?.signOut?.();
+          // reflect immediately
+          updateLoginButton('login', null);
+        } else {
+          // fallback: start login flow if no currentUser
+          await window.auth?.signInWithGoogle?.();
+        }
+      } catch (err) {
+        console.warn('[ui] auth toggle failed', err);
+      } finally {
+        el.disabled = false;
       }
-    } catch (err) {
-      console.warn('[ui] auth toggle failed', err);
-    } finally {
-      el.disabled = false;
-    }
-  };
+    };
 
-  // cloud indicator update
-  try { updateCloudStatus('cloud', user); } catch(e) {}
-  return;
-}
+    try { updateCloudStatus('cloud', user); } catch(e) {}
+    return;
+  }
 
-  // fallback
+  // fallback safety
   el.textContent = 'Log in';
+  el.title = 'Log in';
+  el.setAttribute('aria-label', 'Log in');
   el.onclick = async () => { await window.auth?.signInWithGoogle?.(); };
   try { updateCloudStatus('local', null); } catch(e) {}
-  try { el.setAttribute('data-auth-login', '1'); } catch(e){}
 }
 
 // ---------- Slim MutationObserver: reagiert nur auf explizit markierte Nodes ----------
@@ -890,6 +1101,11 @@ try {
   if (cur) {
     updateLoginButton('logout', cur);
     updateCloudStatus('cloud', cur);
+    if (cur) {
+  setCloudState(true, cur);
+} else {
+  setCloudState(false, null);
+}
     // ensure realtime subscription starts if needed
     try { startRealtimeSync(cur.uid); } catch(e){ /* noop */ }
   } else {
@@ -971,9 +1187,11 @@ try {
     console.log('[auth] onChange ->', u);
     if (u) {
       updateCloudStatus('cloud', u);
+      
       startRealtimeSync(u.uid);
       window.loadFromCloudAndApply?.(u.uid);
       updateLoginButton('logout', u);
+      setCloudState(!!u, u);
     } else {
       stopRealtimeSync();
       updateCloudStatus('local', null);
