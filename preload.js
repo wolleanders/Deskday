@@ -72,6 +72,10 @@ contextBridge.exposeInMainWorld('appApi', {
     onUpdateDownloaded: (cb) => ipcRenderer.on('update:downloaded', (_, data) => cb(data))
 });
 
+contextBridge.exposeInMainWorld('winCtl', {
+    setAOT: (on) => ipcRenderer.invoke('window:setAlwaysOnTop', on)
+});
+
 // ---- Firebase init & Core Logic (async) ----
 (async () => {
     try {

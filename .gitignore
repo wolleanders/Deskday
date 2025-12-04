@@ -71,3 +71,10 @@ node_modules/
 # Generated app and tray icons (run npm run build:icon to regenerate)
 assets/icons/app.ico
 assets/icons/tray-*.ico
+
+# Build output
+dist/
+out/
+
+# Window state persistence
+window-state.json
