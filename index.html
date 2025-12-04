@@ -40,9 +40,73 @@
   <link rel="stylesheet" href="style.css" />
   <title>Deskday Proto</title>
 </head>
+<!-- ONBOARDING OVERLAYS -->
+<!-- Step 1: Login Choice -->
+<div id="onboardingLogin" class="onboarding onboarding-login hidden" aria-modal="true" role="dialog">
+  <div class="onboarding-card">
+    <h2 class="onboarding-title">Welcome to Deskday</h2>
+    <p class="onboarding-text">Would you like to log in or continue locally?</p>
+    <div class="onboarding-actions">
+      <button id="onboardingLoginNow" class="onboarding-btn onboarding-btn-primary">Log in with Google</button>
+      <button id="onboardingLoginLater" class="onboarding-btn onboarding-btn-secondary">Continue Locally</button>
+    </div>
+  </div>
+</div>
+
+<!-- Step 2: Theme Choice -->
+<div id="onboardingTheme" class="onboarding onboarding-theme hidden" aria-modal="true" role="dialog">
+  <div class="onboarding-card">
+    <h2 class="onboarding-title">Choose Theme</h2>
+    <p class="onboarding-text">Do you prefer light or dark mode?</p>
+    <div class="onboarding-option">
+      <div class="onboarding-toggle-group">
+        <input type="radio" name="theme" id="onboardingThemeDark" value="dark" checked class="onboarding-toggle-radio">
+        <label for="onboardingThemeDark" class="onboarding-toggle-label">Dark</label>
+        <input type="radio" name="theme" id="onboardingThemeLight" value="light" class="onboarding-toggle-radio">
+        <label for="onboardingThemeLight" class="onboarding-toggle-label">Light</label>
+      </div>
+    </div>
+    <div class="onboarding-actions">
+      <button id="onboardingThemeNext" class="onboarding-btn onboarding-btn-primary">Next</button>
+    </div>
+  </div>
+</div>
+
+<!-- Step 3: Autostart Choice -->
+<div id="onboardingAutostart" class="onboarding onboarding-autostart hidden" aria-modal="true" role="dialog">
+  <div class="onboarding-card">
+    <h2 class="onboarding-title">Auto-start</h2>
+    <p class="onboarding-text">Launch Deskday when you start your computer?</p>
+    <div class="onboarding-actions">
+      <button id="onboardingAutostartYes" class="onboarding-btn onboarding-btn-primary">Yes</button>
+      <button id="onboardingAutostartNo" class="onboarding-btn onboarding-btn-secondary">No</button>
+    </div>
+  </div>
+</div>
+
+<!-- Step 4: Time Format Choice -->
+<div id="onboardingFormat" class="onboarding onboarding-format hidden" aria-modal="true" role="dialog">
+  <div class="onboarding-card">
+    <h2 class="onboarding-title">Time Format</h2>
+    <p class="onboarding-text">Which time format do you prefer?</p>
+    <div class="onboarding-option">
+      <div class="onboarding-toggle-group">
+        <input type="radio" name="format" id="onboardingFormat24h" value="24h" checked class="onboarding-toggle-radio">
+        <label for="onboardingFormat24h" class="onboarding-toggle-label">24h</label>
+        <input type="radio" name="format" id="onboardingFormat12h" value="12h" class="onboarding-toggle-radio">
+        <label for="onboardingFormat12h" class="onboarding-toggle-label">12h</label>
+      </div>
+    </div>
+    <div class="onboarding-actions">
+      <button id="onboardingFormatNext" class="onboarding-btn onboarding-btn-primary">Next</button>
+    </div>
+  </div>
+</div>
+
 <!--  STARTUP Start/Ende Editor (SEE0) -->
 <div id="seeOverlay" class="see hidden" aria-modal="true" role="dialog">
   <div class="see-card">
+    <button id="seeClose" class="see-close" aria-label="Close">✕</button>
     <h2 class="see-title">WAKE/ SLEEP</h2>
 
     <div class="see-row">
@@ -65,55 +129,67 @@
 <!-- SETTINGS Overlay (SET) -->
 <div id="setOverlay" class="set hidden" role="dialog" aria-modal="true" aria-labelledby="setTitle">
   <div class="set-card">
-    <h2 id="setTitle" class="set-title">Settings</h2>
-
-    <button id="setClose" class="set-close">&#x2715</button>
-    <button id="cloudStatus" class="cloud-indicator" aria-label="Cloud status" title="Local mode">
-    ☁︎
-    </button>
-  
-    <div class="set-section">
-      <div class="set-subtitle">UI</div>
-
-      <label class="set-row">
-        <span class="set-label">Light Mode</span>
-        <input id="setLight" class="set-check" type="checkbox">
-      </label>
-
-      <label class="set-row">
-        <span class="set-label">12h Format</span>
-        <input id="set12h" class="set-check" type="checkbox">
-      </label>
+    <div class="set-header">
+      <h2 id="setTitle" class="set-title">Settings</h2>
+      <div class="set-header-buttons">
+        <button id="cloudStatus" class="cloud-indicator" aria-label="Cloud status" title="Local mode">☁︎</button>
+        <button id="setClose" class="set-close">&#x2715</button>
+      </div>
     </div>
 
-    <div class="set-section">
-      <div class="set-subtitle">System</div>
+    <div class="set-content">
+      <div class="set-section">
+        <div class="set-subtitle">UI</div>
 
-      <label class="set-row">
-        <span class="set-label">Allow autostart</span>
-        <input id="setAuto" class="set-check" type="checkbox">
-      </label>
+        <div class="set-option">
+          <span class="set-label">Theme</span>
+          <div class="set-toggle-group">
+            <input type="radio" name="set-theme" id="setThemeDark" value="dark" class="set-toggle-radio">
+            <label for="setThemeDark" class="set-toggle-label">Dark</label>
+            <input type="radio" name="set-theme" id="setThemeLight" value="light" class="set-toggle-radio">
+            <label for="setThemeLight" class="set-toggle-label">Light</label>
+          </div>
+        </div>
 
-      <label class="set-row">
-        <span class="set-label">Always on top</span>
-        <input id="setAOT" class="set-check" type="checkbox">
-      </label>
+        <div class="set-option">
+          <span class="set-label">Time Format</span>
+          <div class="set-toggle-group">
+            <input type="radio" name="set-format" id="setFormat24h" value="24h" class="set-toggle-radio">
+            <label for="setFormat24h" class="set-toggle-label">24h</label>
+            <input type="radio" name="set-format" id="setFormat12h" value="12h" class="set-toggle-radio">
+            <label for="setFormat12h" class="set-toggle-label">12h</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="set-section">
+        <div class="set-subtitle">System</div>
+
+        <div class="set-option">
+          <span class="set-label">Autostart</span>
+          <input type="checkbox" id="setAuto" class="set-check">
+        </div>
+
+        <div class="set-option">
+          <span class="set-label">Always on top</span>
+          <input type="checkbox" id="setAOT" class="set-check">
+        </div>
+      </div>
     </div>
 
-    <div class="set-actions">
-      
-      <button id="setLogin" data-auth-login="1" class="set-btn">Log in</button>
+    <div class="set-footer">
+      <div class="set-footer-top">
+        <button id="setLogin" data-auth-login="1" class="set-btn">Log in</button>
+      </div>
+      <div class="set-footer-links">
+        <a href="mailto:wolfgang.anders45@gmail.com">Support</a>
+        <span class="set-footer-divider">•</span>
+        <a href="mailto:wolfgang.anders45@gmail.com">Impressum</a>
+        <span class="set-footer-divider">•</span>
+        <span class="set-byline">by Zenith</span>
+      </div>
     </div>
-    <!-- hint & footer -->
-     <div class="set-footer" style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
-  <div class="set-footer-left">
-    <a href="mailto:wolfgang.anders45@gmail.com" style="color:var(--muted); font-size:12px; margin-right:10px;">Support</a>
-    <a href="mailto:wolfgang.anders45@gmail.com" style="color:var(--muted); font-size:12px;">Impressum</a>
   </div>
-  <p id="setWho" class="set-hint" aria-live="polite"></p>
-  <div class="byline">by Zenith</div>
-  </div>
-</div>
 </div>
 <body>
   <div id="windowClip">
@@ -203,6 +279,31 @@
   <script type="module" src="renderer.js"></script>
   
   <div id="dragOverlay" class="drag-overlay hidden"></div>
+  
+  <!-- Loading Overlay (shown during auth restore) -->
+  <div id="loadingOverlay" class="loading-overlay hidden">
+    <div class="loading-spinner">
+      <div class="loading-rect-1"></div>
+      <div class="loading-rect-2"></div>
+    </div>
+    <p class="loading-text">Loading...</p>
+  </div>
+  
+  <!-- Toast Container -->
+  <div id="toastContainer" class="toast-container" role="region" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- Update Dialog -->
+  <div id="updateDialog" class="update-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="updateTitle">
+    <div class="update-content">
+      <h2 id="updateTitle">Update Available</h2>
+      <p id="updateMessage">A new version of Deskday is available.</p>
+      <div class="update-buttons">
+        <button id="updateLaterBtn" class="btn btn-secondary">Later</button>
+        <button id="updateNowBtn" class="btn btn-primary">Update Now</button>
+      </div>
+    </div>
+  </div>
+  
   </div>
   </div>
 </body>

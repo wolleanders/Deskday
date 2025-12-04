@@ -3,10 +3,85 @@
 import { bootSettings, getSettings, applyHourFormat, toggleTheme } from './modules/settings.js';
 import { openSet, closeSet } from './modules/setOverlay.js';
 import { bootLoginMode } from './modules/loginMode.js';
-import { loadHours, saveHours, exportTimetable, importTimetable, saveEntries, loadEntries, importTimetableNewestWins, shouldApplyRemote } from "./modules/storage.js";
+import { loadHours, saveHours, exportTimetable, importTimetable, saveEntries, loadEntries, importTimetableNewestWins, shouldApplyRemote, touchEntryUpdatedAt } from "./modules/storage.js";
 import { scheduleCloudSave } from "./modules/cloudSync.js";
+import { isFirstStartup, getOnboardingStep, completeOnboarding } from './modules/onboarding.js';
+import { startOnboarding, finishOnboarding, isOnboardingActive, handleAuthChangeInOnboarding } from './modules/onboardingUI.js';
+import { installResetShortcut } from './modules/resetHelper.js';
 // auth-state kept separate; may be undefined in some runs
 import * as AuthState from './modules/authState.js';
+
+/* ===========================
+   EARLY BOOT: Apply theme before loading overlay shown
+   =========================== */
+(function earlyThemeSetup() {
+  try {
+    // Try to get saved theme from localStorage
+    let theme = localStorage.getItem('tt.settings');
+    if (theme) {
+      try {
+        theme = JSON.parse(theme).theme || 'dark';
+      } catch {
+        theme = 'dark';
+      }
+    } else {
+      theme = 'dark'; // default
+    }
+    
+    // Apply theme before anything else renders
+    if (theme === 'light') {
+      document.documentElement.setAttribute('data-theme', 'light');
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+    }
+    console.log('[boot] theme applied:', theme);
+  } catch (e) {
+    console.warn('[boot] earlyThemeSetup failed, defaulting to dark', e);
+    document.documentElement.removeAttribute('data-theme');
+  }
+})();
+
+/* ===========================
+   LOADING OVERLAY & TOAST MANAGEMENT
+   =========================== */
+function hideLoadingOverlay() {
+  const overlay = document.getElementById('loadingOverlay');
+  if (overlay) {
+    overlay.classList.add('hidden');
+    setTimeout(() => {}, 600);
+  }
+}
+
+function showLoadingOverlay() {
+  const overlay = document.getElementById('loadingOverlay');
+  if (overlay) {
+    overlay.classList.remove('hidden');
+  }
+}
+
+function showToast(message, duration = 3000) {
+  console.log('[showToast] called with message:', message);
+  const container = document.getElementById('toastContainer');
+  console.log('[showToast] container found:', !!container);
+  if (!container) {
+    console.warn('[showToast] toastContainer not found!');
+    return;
+  }
+
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.textContent = message;
+  console.log('[showToast] appending toast to container');
+  container.appendChild(toast);
+
+  // Auto-dismiss
+  setTimeout(() => {
+    toast.classList.add('removing');
+    setTimeout(() => {
+      toast.remove();
+    }, 300); // Match animation duration
+  }, duration);
+}
 
 /* -------------------------
    Quick UI wiring (top)
@@ -16,8 +91,8 @@ document.getElementById('themeBtn')?.addEventListener('click', () => toggleTheme
 /* ===========================
    App state / constants
    =========================== */
-let startHour = 1;
-let endHour   = 23;
+let startHour = null;
+let endHour   = null;
 const H = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--hour-h')) || 88;
 const H_FULL = H;
 const H_COLLAPSED = Math.round(H * 0.45);
@@ -32,6 +107,9 @@ let minOffset = 0, maxOffset = 0;
 
 let isEditor = false;
 let loginInProgress = false;
+let isBooting = true; // Flag to track if we're in boot phase
+let bootInitialized = false;
+let isFirstBoot = isFirstStartup(); // Check early, before any function runs
 
 let model = loadEntries();
 const COLLAPSE_KEY = 'deskday.collapse.v1';
@@ -133,7 +211,10 @@ function setHourText(hour, text) {
   if (!trimmed) delete model[key];
   else model[key] = trimmed;
   console.log('[Deskday] setHourText', hour, '→', JSON.stringify(model));
-  try { saveEntries(model); } catch(e){ console.warn('saveEntries failed', e); }
+  try { 
+    saveEntries(model); 
+    touchEntryUpdatedAt(key); // Track that this entry was modified locally
+  } catch(e){ console.warn('saveEntries failed', e); }
   try { scheduleCloudSave(); } catch(e){ /* noop */ }
 }
 
@@ -166,6 +247,7 @@ const seeOverlay = document.getElementById('seeOverlay');
 const seeStart = document.getElementById('seeStart');
 const seeEnd = document.getElementById('seeEnd');
 const seeBuild = document.getElementById('seeBuild');
+const seeClose = document.getElementById('seeClose');
 
 // ---- Utils ----
 const pad = (n) => String(n).padStart(2, '0');
@@ -182,7 +264,12 @@ function openSEE(prefill={start:5,end:22}){
   seeOverlay.classList.remove('hidden');
   seeStart.focus();
 }
-function closeSEE(){ seeOverlay?.classList.add('hidden'); }
+function closeSEE(){ 
+  if (seeOverlay) {
+    seeOverlay.classList.add('hidden');
+    setTimeout(() => {}, 500);
+  }
+}
 
 ['input','change','keyup'].forEach(ev=>{
   seeStart?.addEventListener(ev, updateSeeButton);
@@ -193,7 +280,11 @@ function closeSEE(){ seeOverlay?.classList.add('hidden'); }
     if (e.key === 'Enter' && !seeBuild.disabled) seeBuild.click();
   });
 });
-seeBuild?.addEventListener('click', ()=>{
+// wire close button on SEE overlay
+seeClose?.addEventListener('click', ()=>{
+  closeSEE();
+});
+seeBuild?.addEventListener('click', async ()=>{
   const s = parseHour(seeStart.value) ?? parseHour(seeStart.placeholder);
   const e = parseHour(seeEnd.value)   ?? parseHour(seeEnd.placeholder);
   if (!s || !e) return;
@@ -201,6 +292,9 @@ seeBuild?.addEventListener('click', ()=>{
   saveHours(startHour, endHour);
 
   // Timetable neu aufbauen + smooth anzeigen
+  // show the shared loading overlay for a short moment so the change feels
+  // intentional and consistent with the app's boot loading style
+  showLoadingOverlay();
   closeSEE();
   timetable.classList.remove('ready');
   render();
@@ -213,6 +307,23 @@ seeBuild?.addEventListener('click', ()=>{
     updateNowLine();
     startNowLineTicker();
     timetable.classList.add('ready');
+    // keep the loading animation visible for ~1.5s then hide
+    setTimeout(()=>{
+      hideLoadingOverlay();
+      // If onboarding is active (first boot), finish onboarding and continue boot
+      try {
+        if (typeof isOnboardingActive === 'function' && isOnboardingActive()) {
+          console.log('[renderer] SEE completed during onboarding — completing onboarding');
+          finishOnboarding();
+          const curUser = window.auth?.getCurrentUser?.() || null;
+          // initialize main app now that onboarding completed only if not already initialized
+          if (!bootInitialized) {
+            initializeDataAndRender(curUser).catch(err => console.error('[renderer] initializeDataAndRender after onboarding failed', err));
+            bootInitialized = true;
+          }
+        }
+      } catch (err) { console.warn('[renderer] onboarding finish check failed', err); }
+    }, 1500);
   }));
 });
 
@@ -309,6 +420,13 @@ function scheduleHourlySnap(){
 
 /* -------- Render hours / entries -------- */
 function render() {
+  // If no work hours set, don't render anything
+  if (startHour === null || endHour === null) {
+    timetable.replaceChildren();
+    timetable.style.height = '0px';
+    return;
+  }
+
   const f = document.createDocumentFragment();
   for (let h = startHour; h <= endHour; h++) {
     const row  = document.createElement('div'); row.className = 'hour';
@@ -415,7 +533,15 @@ function openHourEditor(hour){
 
   closeAnyHourEditor();
 
-  edit.value = getHourText(hour);
+  let text = getHourText(hour);
+  
+  // Enforce max 3 lines - truncate if needed
+  const lines = text.split('\n');
+  if (lines.length > 3) {
+    text = lines.slice(0, 3).join('\n');
+  }
+  
+  edit.value = text;
   view.style.display = 'none';
   edit.style.display = 'block';
   edit.focus();
@@ -463,9 +589,39 @@ viewport?.addEventListener('dblclick', (e) => {
 timetable?.addEventListener('keydown', (e) => {
   const ta = e.target.closest?.('.txt-input');
   if (!ta) return;
-  if ((e.key === 'Enter') && (e.shiftKey)) { e.stopPropagation(); return; }
+  
+  // Allow Shift+Enter for new lines, but limit to 3 lines max
+  if ((e.key === 'Enter') && (e.shiftKey)) {
+    const currentLines = ta.value.split('\n').length;
+    if (currentLines >= 3) {
+      e.preventDefault();
+      return;
+    }
+    e.stopPropagation();
+    return;
+  }
+  
   if ((e.key === 'Enter')) { e.preventDefault(); const hour = parseInt(ta.dataset.hour,10); closeHourEditor(hour, true); }
 });
+
+// Prevent pasting more than 3 lines
+timetable?.addEventListener('paste', (e) => {
+  const ta = e.target.closest?.('.txt-input');
+  if (!ta) return;
+  
+  e.preventDefault();
+  const text = e.clipboardData.getData('text/plain');
+  const lines = text.split('\n');
+  const currentLines = ta.value.split('\n').length;
+  const availableLines = Math.max(0, 3 - currentLines);
+  
+  const pastedText = lines.slice(0, availableLines).join('\n');
+  const start = ta.selectionStart;
+  const end = ta.selectionEnd;
+  ta.value = ta.value.substring(0, start) + pastedText + ta.value.substring(end);
+  ta.selectionStart = ta.selectionEnd = start + pastedText.length;
+});
+
 timetable?.addEventListener('blur', (e) => {
   const ta = e.target.closest?.('.txt-input');
   if (!ta) return;
@@ -534,7 +690,7 @@ const cloudStatusEl = document.getElementById('cloudStatus');
     .cloud-indicator::before, .cloud-indicator::after { display: none !important; }
 
     /* Ensure cloud-on looks full and readable; cloud-off muted */
-    .cloud-indicator.cloud-on { color: #ffffff !important; opacity: 1 !important; text-decoration: none !important; filter: none !important; }
+    .cloud-indicator.cloud-on { color: var(--accent-2) !important; opacity: 1 !important; text-decoration: none !important; filter: none !important; }
     .cloud-indicator.cloud-off { opacity: 0.6 !important; text-decoration: none !important; filter: none !important; }
 
     /* defensive: ensure the glyph itself isn't dimmed by user-agent rules */
@@ -555,10 +711,10 @@ function setCloudState(isCloud, user = null) {
   el.classList.toggle('cloud-off', !isCloud);
   try { window.__deskday_forceCloudInline?.(el, isCloud); } catch(e) {}
 
-  // Inline style enforcement (color white for cloud, reset for local)
+  // Inline style enforcement (let CSS handle color via classes, only set opacity/decoration)
   try {
     if (isCloud) {
-      el.style.color = '#ffffff';
+      el.style.color = '';  // Let CSS var(--accent-2) control the color
       el.style.opacity = '1';
       el.style.textDecoration = 'none';
     } else {
@@ -583,6 +739,9 @@ function setCloudState(isCloud, user = null) {
   return true;
 }
 
+// Expose for other modules to call reliably (avoid timing/order issues)
+try { window.setCloudState = setCloudState; } catch(e) {}
+
 // ---- persistent cloud override: append last CSS + helper to set inline important ----
 (function installPersistentCloudOverride() {
   const ID = 'deskday-cloud-latefix';
@@ -594,7 +753,7 @@ function setCloudState(isCloud, user = null) {
     .set-card > .cloud-indicator.cloud-on,
     #cloudStatus.cloud-indicator.cloud-on,
     .cloud-indicator.cloud-on {
-      color: #ffffff !important;
+      color: var(--accent-2) !important;
       opacity: 1 !important;
       text-decoration: none !important;
       filter: none !important;
@@ -703,9 +862,11 @@ function updateCloudStatus(mode, user) {
     // Inline fallback styles so we are robust against stylesheet race
     if (isCloud) {
       target.style.opacity = '';
+      target.style.color = '';
       target.style.textDecoration = 'none';
     } else {
       target.style.opacity = '0.55';
+      target.style.color = '';
     }
 
     target.setAttribute('title', title);
@@ -717,8 +878,9 @@ function updateCloudStatus(mode, user) {
       s.id = 'deskday-cloud-fix';
       s.textContent = `
         .cloud-indicator::before, .cloud-indicator::after { display: none !important; }
-        .cloud-indicator.cloud-on { opacity: 1 !important; text-decoration: none !important; }
-        .cloud-indicator.cloud-off { opacity: 0.55 !important; }
+        .cloud-indicator { color: var(--muted) !important; opacity: 0.5 !important; }
+        .cloud-indicator.cloud-on { opacity: 1 !important; color: #ff0000 !important; text-decoration: none !important; }
+        .cloud-indicator.cloud-off { opacity: 0.5 !important; color: var(--muted) !important; }
       `;
       document.head.appendChild(s);
     }
@@ -728,6 +890,9 @@ function updateCloudStatus(mode, user) {
     console.warn('[cloud] updateCloudStatus failed', e);
   }
 }
+
+// Expose for other modules to call reliably (avoid timing/order issues)
+try { window.updateCloudStatus = updateCloudStatus; } catch(e) {}
 
 
 let __rtUnsub = null;
@@ -739,19 +904,26 @@ function startRealtimeSync(uid) {
   }
   try {
     __rtUnsub = window.cloud.subscribeToTimetable(uid, (remoteData) => {
-  console.log('[realtime] update ->', !!remoteData);
-  if (!remoteData) return;
+  console.log('[realtime] *** CALLBACK FIRED ***', !!remoteData);
+  console.log('[realtime] remoteData:', remoteData);
+  if (!remoteData) {
+    console.log('[realtime] remoteData is null/empty, returning');
+    return;
+  }
 
-  const applied = importTimetableNewestWins(remoteData); // vergleicht _meta.updatedAt
+  // Use smart merge which compares per-entry timestamps
+  const applied = importTimetableNewestWins(remoteData);
+  
   if (applied) {
-    // nur UI neu aufbauen – NICHT setMode(false) o. Ä. aufrufen
+    // Rebuild UI with merged data
     model = loadEntries();
     render();
+    console.log('[realtime] ✓ smart merge applied and UI updated');
   } else {
-    console.log('[realtime] ignored stale cloud snapshot');
+    console.log('[realtime] ignored (no entries newer than local)');
   }
 });
-    console.log('[realtime] subscribed for', uid);
+    console.log('[realtime] subscribed for uid:', uid);
   } catch (e) {
     console.warn('[realtime] subscribe failed', e);
   }
@@ -988,6 +1160,14 @@ function installAuthMutationObserver() {
         try { updateCloudStatus('cloud', cur); } catch(e) {}
         try { startRealtimeSync(cur.uid); } catch(e) {}
         try { window.loadFromCloudAndApply?.(cur.uid); } catch (e) {}
+        
+        // Show toast during boot if user was restored via poller
+        if (isBooting) {
+          const userName = cur.displayName || cur.email || cur.uid || 'User';
+          console.log('[auth-poller] boot user detected, showing toast:', userName);
+          showToast(`Logged in as ${userName}`, 2000);
+        }
+        
         clearInterval(id);
         return;
       }
@@ -1000,7 +1180,7 @@ function installAuthMutationObserver() {
 })();
 
 // ---------------------- Auth realtime wiring ----------------------
-(function wireAuthRealtime() {
+(async function wireAuthRealtime() {
   if (!window.auth) {
     console.warn('[auth] bridge missing — fallback to local');
     updateCloudStatus('local', null);
@@ -1011,6 +1191,12 @@ function installAuthMutationObserver() {
   try {
     const cur = window.auth.getCurrentUser?.() || null;
     console.log('[auth] immediate currentUser ->', cur ? { uid: cur.uid } : null);
+    // If first startup, show onboarding instead of normal boot
+    if (isFirstBoot) {
+      console.log('[renderer] first startup detected, showing onboarding');
+      try { await startOnboarding(); } catch(e) { console.warn('[renderer] startOnboarding failed', e); }
+      // continue boot silently (no loading overlay was shown)
+    }
     if (cur) {
       updateLoginButton('logout', cur);
       updateCloudStatus('cloud', cur);
@@ -1030,11 +1216,26 @@ function installAuthMutationObserver() {
   if (typeof window.auth.onChange === 'function') {
     window.auth.onChange((u) => {
       console.log('[auth] onChange ->', u);
+      console.log('[auth] isBooting:', isBooting);
+      
+      // Handle onboarding flow during login
+      if (u && isFirstBoot) {
+        try { handleAuthChangeInOnboarding(u); } catch (e) { console.warn('[onboardingUI] auth change handler failed', e); }
+      }
+      
       if (u) {
         updateLoginButton('logout', u);
         updateCloudStatus('cloud', u);
         try { startRealtimeSync(u.uid); } catch (e) {}
         try { window.loadFromCloudAndApply?.(u.uid); } catch (e) {}
+        
+        // Show toast during boot if user was restored
+        if (isBooting) {
+          const userName = u.displayName || u.email || u.uid || 'User';
+          console.log('[renderer] boot login detected, showing toast:', userName);
+          console.log('[renderer] toastContainer exists:', !!document.getElementById('toastContainer'));
+          showToast(`Logged in as ${userName}`, 2000);
+        }
       } else {
         stopRealtimeSync();
         updateLoginButton('login', null);
@@ -1047,6 +1248,59 @@ function installAuthMutationObserver() {
     console.warn('[auth] onChange not available');
   }
 })();
+
+/**
+ * Lädt Stunden, führt initiales Rendering durch und synchronisiert mit der Cloud,
+ * falls ein Benutzer angemeldet ist.
+ * Dies ist der neue, kritische Teil für die Persistenz.
+ */
+async function initializeDataAndRender(user) {
+    console.log('[boot] initializeDataAndRender started. User:', user ? user.uid : 'none');
+    
+    // 1. Stunden laden (kein Default - nur wenn gespeichert)
+    const hours = loadHours();
+    if (hours) { 
+        startHour = hours.start; endHour = hours.end; 
+    }
+    // Note: If no hours are saved, startHour/endHour remain undefined
+    // and the schedule will be empty until user sets work hours
+
+    // 2. Initiales Render mit aktuellen Daten (noch nicht sichtbar)
+    render();
+
+    // 3. Daten-Synchronisation (KRITISCH für Persistenz-Fix)
+    if (user) {
+        // Lade Cloud-Daten ODER lade lokal und lade die neueren lokalen hoch.
+        // loadFromCloudAndApply aktualisiert model/render() bei Cloud-Übernahme.
+        await window.loadFromCloudAndApply?.(user.uid);
+        
+        // Starte den Realtime-Sync
+        try { startRealtimeSync(user.uid); } catch (e) { console.warn('[boot] startRealtimeSync failed', e); }
+    } else {
+        // Kein Benutzer: Bleibe beim lokalen Zustand.
+        loadLocalData(); 
+    }
+    
+    // 4. Finales UI-Boot (Layout, Ticker, Ready-State)
+    timetable.classList.add('ready');
+    setMode(false);
+    snapToCurrentHour();
+    scheduleHourlySnap();
+    
+    // Layout nach Stundenformat/Fonts anpassen
+    const settingsAfterRender = getSettings();
+    applyHourFormat(settingsAfterRender.hour12, { labelSelector: '.hour .label' });
+    
+    const whenFontsReady = (document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve();
+    whenFontsReady.then(() => {
+        requestAnimationFrame(()=>requestAnimationFrame(()=>{
+            recalcLayout();
+            ensureNowLine();
+            updateNowLine();
+            startNowLineTicker();
+        }));
+    });
+}
   
 // expose helper for other modules (kept compatible)
 window.__deskday_updateLoginButton = updateLoginButton;
@@ -1056,387 +1310,315 @@ window.__deskday_updateLoginButton = updateLoginButton;
 
 
 /* ------------------ DOMContentLoaded boot (BEREINIGT) ------------------ */
+/* ----------------------------------------------------------------------------------
+   DOM CONTENT LOADED (Beibehaltung aller Funktionen)
+   ---------------------------------------------------------------------------------- */
 document.addEventListener('DOMContentLoaded', async () => {
 
-  console.time('[entry] boot');
+    console.time('[entry] boot');
 
-  // robust: wait for preload/firebase to say "ready" (with a safe timeout)
-  async function waitForAuthReady(timeoutMs = 5000) {
+    // Log first boot detection result
+    console.log('[renderer] isFirstBoot:', isFirstBoot);
 
-    // Prefer explicit auth.waitForInitialAuth if exposed by preload (gives true/false whether user restored)
-    try {
-      if (window.auth && typeof window.auth.waitForInitialAuth === 'function') {
-        console.log('[renderer] using auth.waitForInitialAuth() to await initial auth state');
-        const restored = await window.auth.waitForInitialAuth(Math.min(timeoutMs, 5000));
-        console.log('[renderer] auth.waitForInitialAuth ->', restored);
-        return;
-      }
-    } catch (e) {
-      console.warn('[renderer] auth.waitForInitialAuth threw', e);
+    // Show loading overlay during boot
+    // Only show loading overlay if NOT first startup
+    if (!isFirstBoot) {
+      showLoadingOverlay();
     }
 
-    // fallback: wait for firebaseReady flag from preload
-    try {
-      if (window.firebaseReady && typeof window.firebaseReady.isReady === 'function') {
-        const start = Date.now();
-        while (true) {
-          try {
-            if (window.firebaseReady.isReady()) { console.log('[renderer] firebaseReady.isReady -> true'); return; }
-          } catch (e) { console.warn('[renderer] firebaseReady.isReady threw', e); }
-          if (Date.now() - start > timeoutMs) { console.warn('[renderer] waitForAuthReady timeout, continuing anyway'); return; }
-          await new Promise(r => setTimeout(r, 120));
+    // --- FUNKTION: waitForAuthReady (BEIBEHALTEN) ---
+    async function waitForAuthReady(timeoutMs = 5000) {
+
+        // Prefer explicit auth.waitForInitialAuth if exposed by preload (gives true/false whether user restored)
+        try {
+            if (window.auth && typeof window.auth.waitForInitialAuth === 'function') {
+                console.log('[renderer] using auth.waitForInitialAuth() to await initial auth state');
+                const restored = await window.auth.waitForInitialAuth(Math.min(timeoutMs, 5000));
+                console.log('[renderer] auth.waitForInitialAuth ->', restored);
+                return;
+            }
+        } catch (e) {
+            console.warn('[renderer] auth.waitForInitialAuth threw', e);
         }
-      }
-    } catch (e) {
-      console.warn('[renderer] waitForAuthReady fallback threw', e);
+
+        // fallback: wait for firebaseReady flag from preload
+        try {
+            if (window.firebaseReady && typeof window.firebaseReady.isReady === 'function') {
+                const start = Date.now();
+                while (true) {
+                    try {
+                        if (window.firebaseReady.isReady()) { console.log('[renderer] firebaseReady.isReady -> true'); return; }
+                    } catch (e) { console.warn('[renderer] firebaseReady.isReady threw', e); }
+                    if (Date.now() - start > timeoutMs) { console.warn('[renderer] waitForAuthReady timeout, continuing anyway'); return; }
+                    await new Promise(r => setTimeout(r, 120));
+                }
+            }
+        } catch (e) {
+            console.warn('[renderer] waitForAuthReady fallback threw', e);
+        }
     }
-  }
+    
+    // --- 1. Auf Initialen Auth-Status warten ---
+    await waitForAuthReady(5000);
 
-  await waitForAuthReady(5000);
+    const cur = window.auth?.getCurrentUser?.() || null;
 
-      // --- Force UI sync after firebase/preload ready (insert in DOMContentLoaded boot) ---
-try {
-  const cur = window.auth?.getCurrentUser?.() || null;
-  console.log('[ui] force-sync at boot — currentUser ->', cur);
-  if (cur) {
-    updateLoginButton('logout', cur);
-    updateCloudStatus('cloud', cur);
+    // Add artificial delay to see loading animation (can be removed later)
+    await new Promise(r => setTimeout(r, 2000));
+
+    // Hide loading overlay after auth is ready
+    hideLoadingOverlay();
+
+    // Show toast if user is logged in - try displayName, email, or uid
     if (cur) {
-  setCloudState(true, cur);
-} else {
-  setCloudState(false, null);
-}
-    // ensure realtime subscription starts if needed
-    try { startRealtimeSync(cur.uid); } catch(e){ /* noop */ }
-  } else {
-    updateLoginButton('login', null);
-    updateCloudStatus('local', null);
-  }
-} catch (e) {
-  console.warn('[ui] force-sync failed', e);
-}
-
-  // ---------- small race-proof fallback: poll for restored auth (short-lived) ----------
-(function installShortAuthPoller() {
-  // only once
-  if (window.__deskday_auth_poller_installed) return;
-  window.__deskday_auth_poller_installed = true;
-
-  // if already have user, nothing to do
-  if (window.auth?.getCurrentUser?.()) return;
-
-  // poll a few times (fast), then stop
-  const maxAttempts = 12;       // 12 * 250ms = 3s total
-  let attempts = 0;
-  const id = setInterval(() => {
-    attempts++;
-    try {
-      const cur = window.auth?.getCurrentUser?.();
-      console.log('[auth-poller] attempt', attempts, 'cur ->', cur ? { uid: cur.uid, email: cur.email } : null);
-      if (cur) {
-        // found restored user -> update UI and start realtime
-        try { updateLoginButton('logout', cur); } catch (e) { console.warn('[auth-poller] updateLoginButton failed', e); }
-        try { updateCloudStatus('cloud', cur); } catch (e) {}
-        try { startRealtimeSync(cur.uid); } catch (e) {}
-        // also try to load remote once
-        try { window.loadFromCloudAndApply?.(cur.uid); } catch (e) {}
-        clearInterval(id);
-        return;
-      }
-      if (attempts >= maxAttempts) {
-        clearInterval(id);
-      }
-    } catch (err) {
-      console.warn('[auth-poller] error', err);
-      if (attempts >= maxAttempts) clearInterval(id);
+        const userName = cur.displayName || cur.email || cur.uid || 'User';
+        showToast(`Logged in as ${userName}`, 2000);
     }
-  }, 250);
-})();
 
-  // ---- Auth wiring: set indicator + start/stop realtime + initial cloud sync ----
-(function wireAuthRealtime(){
-  if (!window.auth) {
-    console.warn('[auth] bridge missing — fallback to local');
-    updateCloudStatus('local', null);
-    return;
-  }
-
-  // Sofortstatus
-try {
-  const cur = window.auth.getCurrentUser?.() || null;
-  if (cur) {
-    updateCloudStatus('cloud', cur);
-    startRealtimeSync(cur.uid);
-    // NEU: aktualisiere auch den Login-Button gleich beim Start
-    updateLoginButton('logout', cur);
-    // initial Cloud laden (wenn vorhanden), sonst lokale hochladen (best effort)
-    window.loadFromCloudAndApply?.(cur.uid);
-  } else {
-    updateCloudStatus('local', null);
-    updateLoginButton('login', null); // setze Button auf Login
-  }
-} catch (e) {
-  console.warn('[auth] getCurrentUser threw', e);
-  updateCloudStatus('local', null);
-  updateLoginButton('login', null);
-}
-
-  // Laufende Änderungen
-  if (typeof window.auth.onChange === 'function') {
-  window.auth.onChange((u) => {
-    console.log('[auth] onChange ->', u);
-    if (u) {
-      updateCloudStatus('cloud', u);
-      
-      startRealtimeSync(u.uid);
-      window.loadFromCloudAndApply?.(u.uid);
-      updateLoginButton('logout', u);
-      setCloudState(!!u, u);
-    } else {
-      stopRealtimeSync();
-      updateCloudStatus('local', null);
-      updateLoginButton('login', null);
-      loadLocalData();
-      setMode(false);
-    }
-  });
-}
-})();
-
-//#####################################################################################################
-
-// Delegated auth toggle handler — put this once during boot (DOMContentLoaded)
-(function installAuthDelegatedHandler() {
-  if (window.__deskday_auth_delegate_installed) return;
-  window.__deskday_auth_delegate_installed = true;
-
-  document.addEventListener('click', async (ev) => {
-    // find nearest element marked for auth toggle
-    const el = ev.target.closest && ev.target.closest('[data-auth-login]');
-    if (!el) return; // not an auth control
-
-    // prevent any other handlers in siblings from also running
-    ev.preventDefault();
-    ev.stopPropagation();
-
+    // --- 2. Force UI sync after firebase/preload ready (BEIBEHALTEN) ---
     try {
-      el.disabled = true;
-
-      // read live auth state (always use the bridge)
-      const cur = window.auth?.getCurrentUser?.();
-
-      if (cur) {
-        // currently logged in -> sign out
-        console.log('[auth-delegator] click -> signOut (uid)', cur.uid);
-        await window.auth?.signOut?.();
-        // update UI immediately (best-effort)
-        try { updateLoginButton('login', null); } catch(e) {}
-      } else {
-        // not logged in -> start login flow
-        console.log('[auth-delegator] click -> signInWithGoogle');
-        await window.auth?.signInWithGoogle?.();
-        // UI will be updated via auth.onChange when sign-in completes
-      }
-    } catch (err) {
-      console.warn('[auth-delegator] auth toggle failed', err);
-    } finally {
-      // small delay to avoid re-enable racing the UI replacement
-      setTimeout(() => { try { el.disabled = false; } catch(e) {} }, 200);
-    }
-  }, { capture: true }); // capture to get clicks before some libraries stopPropagation
-})();
-
-//#########################################################################################
-
-  // Settings boot
-  const initialSettings = getSettings();
-  applyHourFormat(initialSettings.hour12, {labelSelector: '.hour .label'});
-  try { await bootSettings({ labelSelector: '.hour .label' }); } catch (e) { console.error('bootSettings failed', e); }
-
-  // Small helper used by login/cloud components (kept in scope)
-  async function loadFromCloudAndApply(uid) {
-    if (!uid) return null;
-    if (!window.cloud || typeof window.cloud.loadTimetable !== 'function') return null;
-    try {
-      const data = await window.cloud.loadTimetable(uid);
-      if (data) {
-  if (shouldApplyRemote(data)) {
-    // Cloud ist neuer -> hart übernehmen
-    importTimetable(data, { mode: 'force' });
-    model = loadEntries();
-    render();
-  } else {
-    // Lokal ist neuer -> lokalen Stand hochladen
-    const local = exportTimetable(); // enthält _meta.updatedAt
-    await window.cloud.saveTimetable(uid, local);
-  }
-} else {
-  // Noch keine Cloud-Daten -> lokalen Stand hochladen
-  const local = exportTimetable();
-  await window.cloud.saveTimetable(uid, local);
-}
-    } catch (e) { console.warn('[renderer] loadFromCloudAndApply failed', e); }
-    return null;
-  }
-  window.loadFromCloudAndApply = loadFromCloudAndApply;
-
-  // Defensive AuthState.initialize: pass local functions or noop so it cannot throw
-  try {
-    const safeStartRealtime = () => { /* noop; real subscribe handled elsewhere */ };
-    const safeStopRealtime = () => { /* noop */ };
-    AuthState?.initialize?.({
-      loadLocalData,
-      startRealtimeSync: safeStartRealtime,
-      stopRealtimeSync: safeStopRealtime,
-      saveTimetable: async () => {},
-      exportLocalData,
-      updateUI: updateLoginButton
-    });
-  } catch (e) {
-    console.warn('[renderer] AuthState.initialize failed (ignored)', e);
-  }
-
-  // Start bootLoginMode but don't allow it to throw UI-breaking errors
-  try {
-    await bootLoginMode({
-      loadLocalData,
-      exportLocalData,
-      applyRemoteData,
-      updateLoginButton: (typeof AuthState?.handleAuthStateChange === 'function') ? AuthState.handleAuthStateChange : updateLoginButton
-    });
-  } catch (e) {
-    console.warn('[renderer] bootLoginMode failed (ignored)', e);
-    updateLoginButton('login', null);
-  }
-
-  // ---------- install observer to update newly added auth controls ----------
-function installAuthMutationObserver() {
-  if (window.__deskday_auth_mutation_installed) return;
-  window.__deskday_auth_mutation_installed = true;
-
-  const mo = new MutationObserver((records) => {
-    const cur = window.auth?.getCurrentUser?.();
-    let found = false;
-    for (const rec of records) {
-      for (const n of rec.addedNodes || []) {
-        if (!(n instanceof HTMLElement)) continue;
-        // if a new node contains an auth control by attribute or button text, update it
-        if (n.matches && n.matches('[data-auth-login]')) { updateLoginButton(cur ? 'logout' : 'login', cur); found = true; break; }
-        if (n.querySelector && n.querySelector('[data-auth-login]')) { updateLoginButton(cur ? 'logout' : 'login', cur); found = true; break; }
-        if (n.querySelector && n.querySelector('button, a')) {
-          const maybe = Array.from(n.querySelectorAll('button, a')).find(b => /sign|log/i.test(b.textContent || ''));
-          if (maybe) { updateLoginButton(cur ? 'logout' : 'login', cur); found = true; break; }
+        if (cur) {
+            updateLoginButton('logout', cur);
+            updateCloudStatus('cloud', cur);
+            setCloudState(true, cur); // Wiederhergestellt, um persistente Farbe zu erzwingen
+            // startRealtimeSync wird jetzt in initializeDataAndRender aufgerufen
+        } else {
+            updateLoginButton('login', null);
+            updateCloudStatus('local', null);
         }
-      }
-      if (found) break;
+    } catch (e) {
+        console.warn('[ui] force-sync failed', e);
     }
+
+    // --- 3. DATEN LADEN & RENDERN (NEU / PERSISTENZ-FIX) ---
+    // Dies ersetzt den alten Render-Block am Ende der DOMContentLoaded
+    await initializeDataAndRender(cur);
+    bootInitialized = true;
+
+
+    // --- 4. Alle anderen Features (BEIBEHALTEN) ---
+
+    // Settings boot (BEIBEHALTEN)
+    const initialSettings = getSettings();
+    applyHourFormat(initialSettings.hour12, {labelSelector: '.hour .label'});
+    try { await bootSettings({ labelSelector: '.hour .label' }); } catch (e) { console.error('bootSettings failed', e); }
+
+    // Defensive AuthState.initialize (BEIBEHALTEN)
+    try {
+        const safeStartRealtime = () => { /* noop; real subscribe handled elsewhere */ };
+        const safeStopRealtime = () => { /* noop */ };
+        AuthState?.initialize?.({
+            loadLocalData,
+            startRealtimeSync: safeStartRealtime,
+            stopRealtimeSync: safeStopRealtime,
+            saveTimetable: async () => {},
+            exportLocalData,
+            updateUI: updateLoginButton,
+            updateCloudStatus
+        });
+    } catch (e) {
+        console.warn('[renderer] AuthState.initialize failed (ignored)', e);
+    }
+    
+    // Start bootLoginMode (BEIBEHALTEN)
+    try {
+        // bootLoginMode sollte den auth.onChange Listener enthalten.
+        await bootLoginMode({
+            loadLocalData,
+            exportLocalData,
+            applyRemoteData,
+            updateLoginButton: (typeof AuthState?.handleAuthStateChange === 'function') ? AuthState.handleAuthStateChange : updateLoginButton
+        });
+    } catch (e) {
+        console.warn('[renderer] bootLoginMode failed (ignored)', e);
+        updateLoginButton('login', null);
+    }
+    
+    // install observer to update newly added auth controls (BEIBEHALTEN)
+    // *Hinweis: Die Funktion muss außerhalb des DOMContentLoaded Blocks definiert sein.*
+    try { installAuthMutationObserver(); } catch (e) { /* ignore */ }
+
+
+    // ----------------- Wire options menu / buttons (UI) (BEIBEHALTEN) -----------------
+    if (optBtn && optMenu) {
+        optBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            optMenu.classList.toggle('hidden');
+            const isOpen = !optMenu.classList.contains('hidden');
+            optBtn.setAttribute('aria-expanded', String(isOpen));
+            optBtn.classList.toggle('open', isOpen);
+            optTE?.classList.toggle('active', isEditor);
+        });
+        function closeOptionsMenu(){ if (!optMenu) return; optMenu.classList.add('hidden'); optBtn?.setAttribute('aria-expanded', 'false'); optBtn?.classList.remove('open'); }
+        optMenu.addEventListener('click', (e) => { const item = e.target.closest('[data-om-item]'); if (!item) return; if (item.dataset.noClose === 'true') return; setTimeout(closeOptionsMenu, 0); });
+        optMenu.addEventListener('keydown', (e) => { if (e.key !== 'Enter' && e.key !== ' ') return; const item = e.target.closest('[data-om-item]'); if (!item) return; e.preventDefault(); item.click(); setTimeout(closeOptionsMenu, 0); });
+        document.addEventListener('click', (e) => { if (optMenu.classList.contains('hidden')) return; if (!optMenu.contains(e.target) && e.target !== optBtn) { optMenu.classList.add('hidden'); optBtn.setAttribute('aria-expanded', 'false'); optBtn.classList.remove('open'); } });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !optMenu.classList.contains('hidden')) { optMenu.classList.add('hidden'); optBtn.setAttribute('aria-expanded', 'false'); optBtn.classList.remove('open'); } });
+    }
+
+    // optSet (settings overlay) -> pass label selector (BEIBEHALTEN)
+    if (optSet) {
+        optSet.addEventListener('click', (e) => {
+            e.stopPropagation();
+            try { openSet({ labelSelector: '.hour .label' }); }
+            catch (err) { console.warn('openSet failed', err); openSet(); }
+        });
+    }
+
+    // Close button inside settings if exist (uses closeSet from module) (BEIBEHALTEN)
+    const setCloseEl = document.getElementById('setClose');
+    if (setCloseEl) {
+        setCloseEl.addEventListener('click', (e) => { e.stopPropagation(); try { closeSet(); } catch(e){ document.getElementById('setOverlay')?.classList.add('hidden'); } });
+    }
+
+    // optMin (BEIBEHALTEN)
+    if (optMin) optMin.addEventListener('click', () => { window.appApi?.minimizeToTray(); });
+
+    // TTE toggle (BEIBEHALTEN)
+    if (optTE) {
+        optTE.addEventListener('click', (e) => { e.stopPropagation(); setMode(!isEditor); optMenu?.classList.add('hidden'); });
+    }
+    // separate TEI button (BEIBEHALTEN)
+    if (teiBtn){
+        teiBtn.addEventListener('click', (e) => { e.stopPropagation(); setMode(!isEditor); });
+    }
+
+    // start/end overlay button (BEIBEHALTEN)
+    if (stBtn){
+        stBtn.addEventListener('click', () => { closeAnyHourEditor(true); openSEE({start:startHour, end:endHour}); });
+    }
+
+    // collapse empty (BEIBEHALTEN)
+    if (colEmpBtn){
+        colEmpBtn.addEventListener('click', () => {
+            collapseState.auto = !collapseState.auto;
+            saveCollapseState();
+            updateAllSummaries();
+            applyCollapsedState();
+            recalcLayout();
+            updateNowLine();
+            snapToCurrentHour({ smooth:true });
+            colEmpBtn.setAttribute('aria-expanded', String(collapseState.auto));
+            colEmpBtn.classList.toggle('active', collapseState.auto);
+            colEmpBtn.setAttribute('aria-pressed', String(collapseState.auto));
+        });
+    }
+
+    // Escape behaviour: close editors + overlays (BEIBEHALTEN)
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        e.preventDefault();
+        const openInputs = timetable.querySelectorAll('.txt-input[style*="display: block"]');
+        openInputs.forEach(inp => { const hour = parseInt(inp.dataset.hour, 10); closeHourEditor(hour, false); });
+        closeSEE();
+        applyCollapsedState();
+        if (isEditor && openInputs.length === 0) setMode(false);
+    });
+
+    // *Hinweis:* Die folgenden Blöcke sind REDUNDANT, da initializeDataAndRender sie abdeckt:
+    // hours load
+    // initial render & boot UI
+    // const hours = loadHours(); 
+    // if (hours) { startHour = hours.start; endHour = hours.end; } else openSEE({start:5, end:22});
+    // render();
+    // timetable.classList.add('ready');
+    // setMode(false);
+    // snapToCurrentHour();
+    // scheduleHourlySnap();
+    // const settingsAfterRender = getSettings();
+    // applyHourFormat(settingsAfterRender.hour12, { labelSelector: '.hour .label' });
+    // const whenFontsReady = ...
+
+    console.timeEnd('[entry] boot');
+    console.log('[entry] ready ✅');
+    
+    // Mark boot phase as complete (stop showing toast on subsequent logins)
+    isBooting = false;
+    
+    // Install reset shortcut (Ctrl+Shift+R) for testing
+    try { installResetShortcut(); } catch (e) { console.warn('[renderer] reset shortcut install failed', e); }
+    
+    // Setup auto-update listeners
+    try { setupAutoUpdateListeners(); } catch (e) { console.warn('[renderer] auto-update setup failed', e); }
+});
+
+//##########################################################################################
+// AUTO-UPDATE UI & HANDLERS
+//##########################################################################################
+
+function setupAutoUpdateListeners() {
+  if (!window.appApi) return;
+  
+  // Listen for update available
+  window.appApi.onUpdateAvailable?.((data) => {
+    console.log('[renderer] Update available:', data);
+    showUpdateDialog(data.version);
   });
-  mo.observe(document.body, { childList: true, subtree: true });
+  
+  // Listen for update downloaded
+  window.appApi.onUpdateDownloaded?.((data) => {
+    console.log('[renderer] Update downloaded:', data);
+    showUpdateDownloadedDialog(data.version);
+  });
 }
 
-  // ----------------- Wire options menu / buttons (UI) -----------------
-  if (optBtn && optMenu) {
-    optBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      optMenu.classList.toggle('hidden');
-      const isOpen = !optMenu.classList.contains('hidden');
-      optBtn.setAttribute('aria-expanded', String(isOpen));
-      optBtn.classList.toggle('open', isOpen);
-      optTE?.classList.toggle('active', isEditor);
-    });
-    function closeOptionsMenu(){ if (!optMenu) return; optMenu.classList.add('hidden'); optBtn?.setAttribute('aria-expanded', 'false'); optBtn?.classList.remove('open'); }
-    optMenu.addEventListener('click', (e) => { const item = e.target.closest('[data-om-item]'); if (!item) return; if (item.dataset.noClose === 'true') return; setTimeout(closeOptionsMenu, 0); });
-    optMenu.addEventListener('keydown', (e) => { if (e.key !== 'Enter' && e.key !== ' ') return; const item = e.target.closest('[data-om-item]'); if (!item) return; e.preventDefault(); item.click(); setTimeout(closeOptionsMenu, 0); });
-    document.addEventListener('click', (e) => { if (optMenu.classList.contains('hidden')) return; if (!optMenu.contains(e.target) && e.target !== optBtn) { optMenu.classList.add('hidden'); optBtn.setAttribute('aria-expanded', 'false'); optBtn.classList.remove('open'); } });
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !optMenu.classList.contains('hidden')) { optMenu.classList.add('hidden'); optBtn.setAttribute('aria-expanded', 'false'); optBtn.classList.remove('open'); } });
-  }
+function showUpdateDialog(version) {
+  const dialog = document.getElementById('updateDialog');
+  const message = document.getElementById('updateMessage');
+  const laterBtn = document.getElementById('updateLaterBtn');
+  const nowBtn = document.getElementById('updateNowBtn');
+  
+  if (!dialog) return;
+  
+  message.textContent = `Version ${version} is now available. Would you like to download and install it?`;
+  
+  laterBtn.onclick = () => {
+    dialog.classList.add('hidden');
+  };
+  
+  nowBtn.onclick = async () => {
+    dialog.classList.add('hidden');
+    showLoadingOverlay();
+    try {
+      await window.appApi.installUpdate?.();
+    } catch (e) {
+      console.error('[renderer] Install update failed:', e);
+      hideLoadingOverlay();
+    }
+  };
+  
+  dialog.classList.remove('hidden');
+}
 
-  // optSet (settings overlay) -> pass label selector
-  if (optSet) {
-    optSet.addEventListener('click', (e) => {
-      e.stopPropagation();
-      try { openSet({ labelSelector: '.hour .label' }); }
-      catch (err) { console.warn('openSet failed', err); openSet(); }
-    });
-  }
-
-  // Close button inside settings if exist (uses closeSet from module)
-  const setCloseEl = document.getElementById('setClose');
-  if (setCloseEl) {
-    setCloseEl.addEventListener('click', (e) => { e.stopPropagation(); try { closeSet(); } catch(e){ document.getElementById('setOverlay')?.classList.add('hidden'); } });
-  }
-
-  // optMin
-  if (optMin) optMin.addEventListener('click', () => { window.appApi?.minimizeToTray(); });
-
-  // TTE toggle
-  if (optTE) {
-    optTE.addEventListener('click', (e) => { e.stopPropagation(); setMode(!isEditor); optMenu?.classList.add('hidden'); });
-  }
-  // separate TEI button
-  if (teiBtn){
-    teiBtn.addEventListener('click', (e) => { e.stopPropagation(); setMode(!isEditor); });
-  }
-
-  // start/end overlay button
-  if (stBtn){
-    stBtn.addEventListener('click', () => { closeAnyHourEditor(true); openSEE({start:startHour, end:endHour}); });
-  }
-
-  // collapse empty
-  if (colEmpBtn){
-    colEmpBtn.addEventListener('click', () => {
-      collapseState.auto = !collapseState.auto;
-      saveCollapseState();
-      updateAllSummaries();
-      applyCollapsedState();
-      recalcLayout();
-      updateNowLine();
-      snapToCurrentHour({ smooth:true });
-      colEmpBtn.setAttribute('aria-expanded', String(collapseState.auto));
-      colEmpBtn.classList.toggle('active', collapseState.auto);
-      colEmpBtn.setAttribute('aria-pressed', String(collapseState.auto));
-    });
-  }
-
-  // Escape behaviour: close editors + overlays
-  document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return;
-    e.preventDefault();
-    const openInputs = timetable.querySelectorAll('.txt-input[style*="display: block"]');
-    openInputs.forEach(inp => { const hour = parseInt(inp.dataset.hour, 10); closeHourEditor(hour, false); });
-    closeSEE();
-    applyCollapsedState();
-    if (isEditor && openInputs.length === 0) setMode(false);
-  });
-
-  // hours load
-  const hours = loadHours();
-  if (hours) { startHour = hours.start; endHour = hours.end; } else openSEE({start:5, end:22});
-
-  // initial render & boot UI
-  render();
-  timetable.classList.add('ready');
-  setMode(false);
-  snapToCurrentHour();
-  scheduleHourlySnap();
-  const settingsAfterRender = getSettings();
-  applyHourFormat(settingsAfterRender.hour12, { labelSelector: '.hour .label' });
-
-  const whenFontsReady = (document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve();
-  whenFontsReady.then(() => {
-    requestAnimationFrame(()=>requestAnimationFrame(()=>{
-      recalcLayout();
-      ensureNowLine();
-      updateNowLine();
-      startNowLineTicker();
-    }));
-  });
-
-
-  console.timeEnd('[entry] boot');
-  console.log('[entry] ready ✅');
-});
+function showUpdateDownloadedDialog(version) {
+  const dialog = document.getElementById('updateDialog');
+  const title = document.getElementById('updateTitle');
+  const message = document.getElementById('updateMessage');
+  const laterBtn = document.getElementById('updateLaterBtn');
+  const nowBtn = document.getElementById('updateNowBtn');
+  
+  if (!dialog) return;
+  
+  title.textContent = 'Update Ready';
+  message.textContent = `Version ${version} has been downloaded. Restart to install?`;
+  laterBtn.textContent = 'Later';
+  nowBtn.textContent = 'Restart Now';
+  
+  laterBtn.onclick = () => {
+    dialog.classList.add('hidden');
+  };
+  
+  nowBtn.onclick = async () => {
+    dialog.classList.add('hidden');
+    try {
+      await window.appApi.installUpdate?.();
+    } catch (e) {
+      console.error('[renderer] Install update failed:', e);
+    }
+  };
+  
+  dialog.classList.remove('hidden');
+}
 
 /* -------------- beforeunload -------------- */
 window.addEventListener('beforeunload', () => {

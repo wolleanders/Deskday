@@ -4,45 +4,80 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const http = require('http');
+const keytar = require('keytar');
+const { autoUpdater } = require('electron-updater');
+
+// Load environment variables (for Google OAuth client secret)
+require('dotenv').config();
+
 console.log('[main] userData path:', app.getPath('userData'));
 
 //##########################################################################################
-const TOKENS_FILENAME = 'deskday-auth-tokens.json';
-function tokenFilePath() {
-  return path.join(app.getPath('userData'), TOKENS_FILENAME);
-}
-
-ipcMain.handle('auth:saveTokens', async (event, payload) => {
-  try {
-    const p = tokenFilePath();
-    fs.writeFileSync(p, JSON.stringify(payload), { encoding: 'utf8', mode: 0o600 });
-    return { ok: true, path: p };
-  } catch (err) {
-    console.warn('[main] auth:saveTokens failed', err);
-    return { ok: false, err: String(err) };
-  }
+// AUTO-UPDATE SETUP
+//##########################################################################################
+autoUpdater.checkForUpdatesAndNotify().catch(e => {
+  console.warn('[main] auto-updater check failed:', e);
 });
 
-ipcMain.handle('auth:loadTokens', async () => {
-  try {
-    const p = tokenFilePath();
-    if (!fs.existsSync(p)) return null;
-    const raw = fs.readFileSync(p, 'utf8');
-    return JSON.parse(raw);
-  } catch (err) {
-    console.warn('[main] auth:loadTokens failed', err);
-    return null;
-  }
+//##########################################################################################
+// AUTH TOKEN HANDLERS - Secure Refresh Token Storage via Keytar
+// Persistent login: Refresh token (Keytar) + Firebase session (browserLocalPersistence)
+//##########################################################################################
+
+const SERVICE = 'Deskday';
+const ACCOUNT_REFRESH = 'google-refresh-token';
+
+// Save refresh token to Keytar (called after successful OAuth)
+ipcMain.handle('tokens:saveRefresh', async (_, refreshToken) => {
+  if (!refreshToken) return false;
+  await keytar.setPassword(SERVICE, ACCOUNT_REFRESH, refreshToken);
+  console.log('[main] refresh token saved to keytar');
+  return true;
 });
 
-ipcMain.handle('auth:clearTokens', async () => {
+// Delete refresh token from Keytar (called on logout)
+ipcMain.handle('tokens:deleteRefresh', async () => {
+  await keytar.deletePassword(SERVICE, ACCOUNT_REFRESH);
+  console.log('[main] refresh token deleted from keytar');
+  return true;
+});
+
+// Get refresh token from Keytar (called on app boot to restore session)
+ipcMain.handle('tokens:getRefresh', async () => {
+  return await keytar.getPassword(SERVICE, ACCOUNT_REFRESH);
+});
+
+// Exchange refresh token for new Google tokens (called during boot restoration)
+ipcMain.handle('tokens:refreshGoogle', async (_, { clientId } = {}) => {
+  const refreshToken = await keytar.getPassword(SERVICE, ACCOUNT_REFRESH);
+  if (!refreshToken) return null;
+
+  const url = 'https://oauth2.googleapis.com/token';
+  // Include client_secret from env (required for refresh token exchange)
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken,
+    client_id: clientId || process.env.GOOGLE_CLIENT_ID || '',
+    client_secret: process.env.GOOGLE_CLIENT_SECRET || ''
+  });
+
   try {
-    const p = tokenFilePath();
-    if (fs.existsSync(p)) fs.unlinkSync(p);
-    return { ok: true };
+    const res = await fetchFn(url, { method: 'POST', body });
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error('refresh failed: ' + txt);
+    }
+    const json = await res.json();
+
+    // If Google returns a new refresh token (rare), save it
+    if (json.refresh_token) {
+      try { await keytar.setPassword(SERVICE, ACCOUNT_REFRESH, json.refresh_token); }
+      catch (e) { console.warn('[main] failed to save new refresh_token', e); }
+    }
+    return json;
   } catch (err) {
-    console.warn('[main] auth:clearTokens failed', err);
-    return { ok: false, err: String(err) };
+    console.error('[main] tokens:refreshGoogle failed:', err.message);
+    throw err;
   }
 });
 
@@ -76,9 +111,19 @@ let lastSavedBounds = null;
 let win; // settingsWin ist aktuell unbenutzt
 app.isQuiting = false;
 
+// Ensure Windows AppUserModelID is set for taskbar / notifications grouping
+try {
+  if (process.platform === 'win32') {
+    // Use a stable app id so Windows shows the correct icon and grouping
+    app.setAppUserModelId('com.wolle.deskday');
+    console.log('[main] setAppUserModelId: com.wolle.deskday');
+  }
+} catch (e) {
+  console.warn('[main] setAppUserModelId failed', e);
+}
+
 const isWin = process.platform === 'win32';
 const isMac = process.platform === 'darwin';
-
 
 // ---------- State laden – inkl. displayId (Monitor-ID)----------
 function loadWindowState() {
@@ -222,6 +267,27 @@ function scheduleSaveWindowState() {
 
 function createWindow() {
   const state = ensureVisibleBounds(loadWindowState());
+  // Use the generated app.ico (or fall back to PNG)
+  const iconPath = path.join(__dirname, 'assets', 'icons', 'app.ico');
+  let chosenIcon = null;
+  try {
+    if (fs.existsSync(iconPath)) {
+      chosenIcon = iconPath;
+      console.log('[main] using generated app.ico');
+    }
+  } catch (e) { console.warn('[main] app.ico check failed', e); }
+  
+  // Fallback to PNG if .ico doesn't exist
+  if (!chosenIcon) {
+    const pngCandidates = [
+      path.join(__dirname, 'assets', 'icons', 'Icon', 'Square44x44Logo.targetsize-256.png'),
+      path.join(__dirname, 'assets', 'icons', 'Icon', 'Square150x150Logo.scale-400.png'),
+    ];
+    for (const p of pngCandidates) {
+      try { if (fs.existsSync(p)) { chosenIcon = p; break; } } catch (e) {}
+    }
+  }
+
   win = new BrowserWindow({
     width:  state.width  || 360,
     height: state.height || 600,
@@ -238,7 +304,7 @@ function createWindow() {
     hasShadow: true,
     titleBarStyle: 'hidden',
     roundedCorners: true,           // wirkt nur auf macOS
-    icon: path.join(__dirname,'assets/icon.ico'),
+    icon: chosenIcon || undefined,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -267,8 +333,8 @@ function createWindow() {
       win.hide();
     } else {
       saveWindowStateNow(); // ✅ hier den richtigen Namen benutzen
-      setTimeout(() => { 
-            app.quit(); 
+      setTimeout(() => {
+            app.quit();
         }, 500); // 500ms (0.5 Sekunden)
     }
   });
@@ -301,6 +367,66 @@ function createTray() {
 
   tray = new Tray(trayIcon);
   tray.setToolTip('Deskday Beta');
+
+  // Build a stable context menu for the tray so users can always access actions
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Show Deskday',
+      type: 'normal',
+      click: () => {
+        try { if (win) { win.show(); win.focus(); } } catch(e) { console.warn('[tray] show failed', e); }
+      }
+    },
+    {
+      label: 'Hide',
+      type: 'normal',
+      click: () => { try { if (win) win.hide(); } catch(e) { console.warn('[tray] hide failed', e); } }
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit Deskday',
+      type: 'normal',
+      click: () => {
+        try {
+          app.isQuiting = true;
+          // ensure we close gracefully
+          if (win) {
+            win.removeAllListeners('close');
+            win.close();
+          }
+          app.quit();
+        } catch (e) {
+          console.warn('[tray] quit failed', e);
+          try { app.quit(); } catch(_){}
+        }
+      }
+    }
+  ]);
+
+  // Set context menu and wire interactions
+  try {
+    tray.setContextMenu(contextMenu);
+  } catch (e) {
+    console.warn('[tray] setContextMenu failed', e);
+  }
+
+  // Click toggles show/hide (left click)
+  tray.on('click', (event, bounds, position) => {
+    try {
+      if (win) {
+        if (win.isVisible()) { win.hide(); }
+        else { win.show(); win.focus(); }
+      }
+    } catch (e) { console.warn('[tray] click handler failed', e); }
+  });
+
+  // Double-click shows the window
+  tray.on('double-click', () => { try { if (win) { win.show(); win.focus(); } } catch(e){} });
+
+  // Right-click: pop up context menu explicitly (some platforms need this)
+  tray.on('right-click', (ev, b) => {
+    try { tray.popUpContextMenu(); } catch (e) { console.warn('[tray] popUpContextMenu failed', e); }
+  });
 
   console.log('[tray] loaded:', iconPath);
   return tray;
@@ -356,6 +482,54 @@ ipcMain.handle('storage:flush', async () => {
 
 ipcMain.on('minimize-to-tray', () => { if (win) win.hide(); });
 
+//##########################################################################################
+// AUTO-UPDATE IPC HANDLERS & EVENT LISTENERS
+//##########################################################################################
+
+// Listen for update events and notify renderer
+autoUpdater.on('update-available', (info) => {
+  console.log('[updater] Update available:', info.version);
+  if (win) {
+    win.webContents.send('update:available', { version: info.version });
+  }
+});
+
+autoUpdater.on('update-downloaded', (info) => {
+  console.log('[updater] Update downloaded:', info.version);
+  if (win) {
+    win.webContents.send('update:downloaded', { version: info.version });
+  }
+});
+
+autoUpdater.on('error', (err) => {
+  console.warn('[updater] Error:', err);
+});
+
+// IPC handler for user to install update
+ipcMain.handle('updater:installUpdate', async () => {
+  console.log('[main] Installing update...');
+  try {
+    setImmediate(() => autoUpdater.quitAndInstall());
+    return true;
+  } catch (e) {
+    console.error('[main] Install failed:', e);
+    return false;
+  }
+});
+
+// IPC handler for renderer to check for updates manually
+ipcMain.handle('updater:checkForUpdates', async () => {
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    return { available: result.updateInfo !== null };
+  } catch (e) {
+    console.warn('[main] Check for updates failed:', e);
+    return { available: false };
+  }
+});
+
+ipcMain.on('minimize-to-tray', () => { if (win) win.hide(); });
+
 // Fenster "always on top" setzen
 ipcMain.handle('window:setAlwaysOnTop', (_event, on) => {
   if (win) {
@@ -387,248 +561,193 @@ ipcMain.handle('autostart:set', (_event, on) => {
 });
 
 
-//TESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTEST#
-
-// ===== Replace the existing google-oauth:start handler with this debug-friendly implementation =====
-// Replace the existing ipcMain.handle('google-oauth:start', ...) with this idempotent version
+// main.js - Ab hier (Zeile ~425) den kompletten Block ersetzen
 ipcMain.handle('google-oauth:start', async () => {
-  // If a login is already in progress, return the same promise/result to future callers
-  if (global.__deskday_oauth_promise) {
-    console.log('[main][oauth] join existing oauth promise');
-    // return the same promise so caller waits for the already-running flow
-    return global.__deskday_oauth_promise;
-  }
-
-  // create and store the promise immediately so simultaneous invokes wait for it
-  global.__deskday_oauth_promise = (async () => {
-    try {
-      // === CONFIG: set your Desktop client ID here (EXACT, no secret) ===
-      const clientId = '1068554735717-k5g4d0pudmu8kl0p8idkugm255v4860r.apps.googleusercontent.com';
-      if (!clientId || clientId.trim() === '') {
-        throw new Error('Bitte setze die Desktop client_id in main.js (clientId variable).');
-      }
-      console.log('[main][oauth] using clientId:', clientId);
-
-      // PKCE helpers
-      function base64url(buffer) {
-        return buffer.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-      }
-      function makeCodeVerifier() { return base64url(crypto.randomBytes(32)); }
-      function makeCodeChallenge(verifier) { return base64url(crypto.createHash('sha256').update(verifier).digest()); }
-
-      const codeVerifier = makeCodeVerifier();
-      const codeChallenge = makeCodeChallenge(codeVerifier);
-      console.log('[main][oauth] PKCE created');
-
-      // start loopback server
-      const server = http.createServer();
-      const port = await new Promise((resolve, reject) => {
-        server.listen(0, '127.0.0.1', () => {
-          const addr = server.address();
-          if (!addr || typeof addr.port !== 'number') return reject(new Error('Failed to get listening port'));
-          resolve(addr.port);
-        });
-        server.on('error', (err) => reject(err));
-      });
-      const redirectUri = `http://127.0.0.1:${port}/callback`;
-      console.log('[main][oauth] loopback server listening on', redirectUri);
-
-      // build auth url
-      const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-      authUrl.searchParams.set('client_id', clientId);
-      authUrl.searchParams.set('response_type', 'code');
-      authUrl.searchParams.set('redirect_uri', redirectUri);
-      authUrl.searchParams.set('scope', 'openid email profile');
-      authUrl.searchParams.set('code_challenge', codeChallenge);
-      authUrl.searchParams.set('code_challenge_method', 'S256');
-      authUrl.searchParams.set('prompt', 'select_account');
-      // authUrl.searchParams.set('access_type', 'offline'); // if you want refresh tokens (consent)
-
-      console.log('[main][oauth] opening system browser to:', authUrl.toString());
-      shell.openExternal(authUrl.toString());
-
-      // wait for callback
-      const code = await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          server.close();
-          reject(new Error('Timeout waiting for OAuth callback (2min)'));
-        }, 2 * 60 * 1000);
-
-        server.on('request', (req, res) => {
-          try {
-            const u = new URL(req.url, `http://127.0.0.1:${port}`);
-            if (u.pathname !== '/callback') {
-              res.writeHead(404, {'Content-Type':'text/plain; charset=utf-8'});
-              res.end('Not found');
-              return;
-            }
-            const err = u.searchParams.get('error');
-            const c = u.searchParams.get('code');
-
-            // nice browser response
-            res.writeHead(200, {'Content-Type':'text/html; charset=utf-8'});
-            if (c) {
-              res.end(`<!doctype html><meta charset="utf-8"><title>Deskday — Login complete</title>
-                <div style="font-family:system-ui,Arial;padding:40px;text-align:center">
-                  <h1>Login successful</h1><p>Du kannst dieses Fenster schließen.</p>
-                </div>`);
-            } else {
-              res.end(`<!doctype html><meta charset="utf-8"><title>Deskday — Login failed</title>
-                <div style="font-family:system-ui,Arial;padding:40px;text-align:center"><h1>Login failed</h1><p>${err||'unknown'}</p></div>`);
-            }
-
-            clearTimeout(timeout);
-            server.close();
-
-            if (err) return reject(new Error('OAuth error: ' + err));
-            if (!c) return reject(new Error('No code in callback'));
-            console.log('[main][oauth] received code:', c);
-            resolve(c);
-          } catch (e) {
-            clearTimeout(timeout);
-            server.close();
-            reject(e);
-          }
-        });
-      });
-
-      // Exchange code for tokens
-      if (!fetchFn) throw new Error('fetchFn not available (install node-fetch@2 or use Node18+)');
-      const tokenEndpoint = 'https://oauth2.googleapis.com/token';
-      const clientSecret = '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';
-      const body = new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
-        grant_type: 'authorization_code',
-        code,
-        redirect_uri: redirectUri,
-        code_verifier: codeVerifier
-      });
-      console.log('[main][oauth] token exchange POST body preview:', body.toString().slice(0,200), '...');
-
-      const tokenResp = await fetchFn(tokenEndpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: body.toString()
-      });
-
-      if (!tokenResp.ok) {
-        const txt = await tokenResp.text();
-        console.error('[main][oauth] token exchange failed status', tokenResp.status, txt);
-        throw new Error(`Token exchange failed: ${tokenResp.status} — ${txt}`);
-      }
-
-      const tokenJson = await tokenResp.json();
-      console.log('[main][oauth] tokenJson received:', tokenJson);
-
-      const accessToken = tokenJson.access_token;
-      const idToken = tokenJson.id_token;
-      if (!accessToken || !idToken) {
-        throw new Error('Missing tokens in token response');
-      }
-
-      // success -> return tokens
-      return { accessToken, idToken, raw: tokenJson };
-
-    } catch (err) {
-      console.error('[main][oauth] ERROR:', err && err.message ? err.message : err);
-      throw err;
+    // If a login is already in progress, return the same promise/result to future callers
+    if (global.__deskday_oauth_promise) {
+        console.log('[main][oauth] join existing oauth promise');
+        return global.__deskday_oauth_promise;
     }
-  })();
 
-  // Wait for the stored promise, and always clear it once done (success or error)
-  try {
-    const result = await global.__deskday_oauth_promise;
-    return result;
-  } finally {
-    global.__deskday_oauth_promise = null;
-  }
+    // create and store the promise immediately so simultaneous invokes wait for it
+    global.__deskday_oauth_promise = (async () => {
+        let server;
+        try {
+            // === CONFIG: set your Desktop client ID here (EXACT, no secret) ===
+            const clientId = process.env.GOOGLE_CLIENT_ID || '1068554735717-haqdeeoaejhbsmn3f807vqnq3arnv5gk.apps.googleusercontent.com';
+            if (!clientId || clientId.trim() === '') {
+                throw new Error('Bitte setze die Desktop client_id in main.js (clientId variable).');
+            }
+            console.log('[main][oauth] using clientId:', clientId);
+
+            // Get client secret from environment or use hardcoded value
+            const clientSecret = process.env.GOOGLE_CLIENT_SECRET || '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';
+            if (!clientSecret) {
+                throw new Error('GOOGLE_CLIENT_SECRET is missing.');
+            }
+            console.log('[main][oauth] client secret configured ✓');
+
+            // PKCE helpers
+            function base64url(buffer) {
+                return buffer.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+            }
+            function makeCodeVerifier() { return base64url(crypto.randomBytes(32)); }
+            function makeCodeChallenge(verifier) { return base64url(crypto.createHash('sha256').update(verifier).digest()); }
+
+            const codeVerifier = makeCodeVerifier();
+            const codeChallenge = makeCodeChallenge(codeVerifier);
+            console.log('[main][oauth] PKCE created');
+
+            // start loopback server
+            server = http.createServer();
+            const port = await new Promise((resolve, reject) => {
+                server.listen(0, '127.0.0.1', () => {
+                    const addr = server.address();
+                    if (!addr || typeof addr.port !== 'number') return reject(new Error('Failed to get listening port'));
+                    resolve(addr.port);
+                });
+                server.on('error', (err) => reject(err));
+            });
+            const redirectUri = `http://127.0.0.1:${port}/callback`;
+            console.log('[main][oauth] loopback server listening on', redirectUri);
+
+            // build auth url
+            const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+            authUrl.searchParams.set('client_id', clientId);
+            authUrl.searchParams.set('response_type', 'code');
+            authUrl.searchParams.set('redirect_uri', redirectUri);
+            authUrl.searchParams.set('scope', 'openid email profile');
+            authUrl.searchParams.set('code_challenge', codeChallenge);
+            authUrl.searchParams.set('code_challenge_method', 'S256');
+            authUrl.searchParams.set('prompt', 'consent');
+            authUrl.searchParams.set('access_type', 'offline');
+
+            console.log('[main][oauth] opening system browser to:', authUrl.toString());
+            shell.openExternal(authUrl.toString());
+
+            // --- WAIT FOR CALLBACK (code) AND THEN DO TOKEN EXCHANGE ---
+            const code = await new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    reject(new Error('Timeout waiting for OAuth callback (2min)'));
+                }, 2 * 60 * 1000);
+
+                server.on('request', (req, res) => {
+                    try {
+                        const u = new URL(req.url, `http://127.0.0.1:${port}`);
+                        if (u.pathname !== '/callback') {
+                            res.writeHead(404, {'Content-Type':'text/plain; charset=utf-8'});
+                            res.end('Not found');
+                            return;
+                        }
+
+                        const err = u.searchParams.get('error');
+                        const c = u.searchParams.get('code');
+
+                        // nice browser response
+                        res.writeHead(200, {'Content-Type':'text/html; charset=utf-8'});
+                        if (c) {
+                            res.end(`<!doctype html><meta charset="utf-8"><title>Deskday — Login complete</title>
+                                <div style="font-family:system-ui,Arial;padding:40px;text-align:center">
+                                    <h1>Login successful</h1><p>Du kannst dieses Fenster schließen.</p>
+                                </div>`);
+                        } else {
+                            res.end(`<!doctype html><meta charset="utf-8"><title>Deskday — Login failed</title>
+                                <div style="font-family:system-ui,Arial;padding:40px;text-align:center"><h1>Login failed</h1><p>${err||'unknown'}</p></div>`);
+                        }
+
+                        // clear timeout and resolve/reject
+                        clearTimeout(timeout);
+
+                        if (err) return reject(new Error('OAuth error: ' + err));
+                        if (!c) return reject(new Error('No code in callback'));
+                        console.log('[main][oauth] received code:', c);
+                        resolve(c);
+                    } catch (e) {
+                        clearTimeout(timeout);
+                        reject(e);
+                    }
+                });
+            });
+
+            // Exchange code for tokens
+            if (!fetchFn) throw new Error('fetchFn not available (install node-fetch@2 or use Node18+)');
+
+            const tokenEndpoint = 'https://oauth2.googleapis.com/token';
+            // build body for token exchange
+            // Desktop apps REQUIRE client_secret even with PKCE (unlike web apps with PKCE)
+            const bodyParams = {
+                client_id: clientId,
+                client_secret: clientSecret || '',  // Desktop apps require this
+                grant_type: 'authorization_code',
+                code,
+                redirect_uri: redirectUri,
+                code_verifier: codeVerifier
+            };
+            
+            const body = new URLSearchParams(bodyParams);
+
+            console.log('[main][oauth] starting token exchange...');
+            const tokenResp = await fetchFn(tokenEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: body.toString()
+            });
+
+            if (!tokenResp.ok) {
+                // Bei einem Fehler den genauen Text-Body von Google loggen
+                const txt = await tokenResp.text().catch(() => 'No response body');
+                console.error('[main][oauth] token exchange failed status', tokenResp.status, txt);
+                throw new Error(`Token exchange failed: ${tokenResp.status} — ${txt}`);
+            }
+
+            const tokenJson = await tokenResp.json();
+            
+            // store refresh token securely (keytar)
+            if (tokenJson.refresh_token) {
+                try {
+                    await keytar.setPassword(SERVICE, ACCOUNT_REFRESH, tokenJson.refresh_token);
+                    console.log('[main][oauth] saved refresh_token to keytar');
+                } catch (e) {
+                    console.warn('[main][oauth] failed saving refresh_token to keytar', e);
+                }
+            }
+
+            const accessToken = tokenJson.access_token;
+            const idToken = tokenJson.id_token;
+            const refreshToken = tokenJson.refresh_token;
+            if (!accessToken || !idToken) {
+                throw new Error('Missing tokens in token response');
+            }
+
+            console.log('[main][oauth] token exchange success — tokens received (has_refresh=' + !!refreshToken + ')');
+
+            // success -> return tokens
+            return { accessToken, idToken, refreshToken };
+
+        } catch (err) {
+            console.error('[main][oauth] ERROR:', err && err.message ? err.message : err);
+            throw err;
+        } finally {
+            // guaranteed cleanup of loopback server
+            try { if (server && server.close) server.close(); } catch (e) { /* ignore */ }
+        }
+    })();
+
+    // Wait for the stored promise, and always clear it once done (success or error)
+    try {
+        const result = await global.__deskday_oauth_promise;
+        return result;
+    } finally {
+        global.__deskday_oauth_promise = null;
+    }
 });
 
-//TESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTEST
-//^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 //#######################################################################################################################
-/*
-ipcMain.handle('google-oauth:start', async () => {
-  // 1. Redirect-URL vorbereiten (Google OAuth)
-  // 2. Nonce erzeugen (zufälliger String)
-  const nonce = crypto.randomBytes(16).toString('hex');
-
-  const params = new URLSearchParams({
-    client_id: clientId,
-    redirect_uri: redirectUri,
-    response_type: 'token id_token',
-    scope: 'openid email profile',
-    prompt: 'select_account'
-  });
-
-  // 3. Auth-URL bauen
-  const authUrl =
-    'https://accounts.google.com/o/oauth2/v2/auth?' +
-    `client_id=${encodeURIComponent(clientId)}` +
-    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-    `&response_type=token%20id_token` +        // oder id_token%20token
-    `&scope=${encodeURIComponent('openid email profile')}` +
-    `&nonce=${encodeURIComponent(nonce)}` +
-    `&prompt=select_account`;
-
-    shell.openExternal(authUrl);
-
-  /* return new Promise((resolve, reject) => {
-    const win = new BrowserWindow({
-      width: 500,
-      height: 650,
-      show: true,
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true
-      }
-    });
-    
-
-    function cleanup() {
-      if (!win.isDestroyed()) win.close();
-    }
-
-    function handleUrl(targetUrl) {
-      if (!targetUrl.startsWith(redirectUri)) return;
-      // Tokens hängen im Fragment hinter '#'
-      const hash = targetUrl.split('#')[1] || '';
-      const p = new URLSearchParams(hash);
-      const accessToken = p.get('access_token');
-      const idToken     = p.get('id_token');
-
-      if (accessToken && idToken) {
-        resolve({ accessToken, idToken });
-      } else {
-        reject(new Error('Missing tokens in redirect URL'));
-      }
-      cleanup();
-    }
-
-    win.webContents.on('will-redirect', (e, url) => handleUrl(url));
-    win.webContents.on('will-navigate', (e, url) => handleUrl(url));
-    win.on('closed', () => {
-      reject(new Error('Login window closed by user'));
-    });
-
-    win.loadURL(authUrl);
-  });
-
-  //#######################################################################################################################
-*/
-  /*
-  const authUrl =
-    `https://accounts.google.com/o/oauth2/v2/auth?` +
-    `client_id=${clientId}` +
-    `&redirect_uri=${redirectUri}` +
-    `&response_type=token` +
-    `&scope=email%20profile%20openid`;
-  */
-
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
+//1068554735717-haqdeeoaejhbsmn3f807vqnq3arnv5gk.apps.googleusercontent.com
+//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

@@ -1,11 +1,12 @@
 // modules/loginMode.js
 // ---------------------
+// Manages login state transitions (local ↔ cloud mode)
+// Auth truth: Firebase's onAuthStateChanged (persisted via Keytar + browserLocalPersistence)
+// Mode tracking: Only for UI display, not for auth control
 
-const MODE_KEY = 'tt.mode';      
+const MODE_KEY = 'tt.mode';      
 const FIRST_KEY = 'tt.firstRun'; 
-let __deskday_signin_promise = null; // Für Single-Flight Login
-
-// --- Exporte für den externen Zugriff ---
+let __deskday_signin_promise = null; // Single-flight login protection// --- Exporte für den externen Zugriff ---
 
 export function getMode() {
   return localStorage.getItem(MODE_KEY) || 'local';
@@ -57,48 +58,51 @@ export async function loginWithGoogle() {
 // -------------------------------------------------------------
 
 /**
- * Ruft die Daten-Synchronisation nach erfolgreichem Login ab.
- * @param {object} user - Der angemeldete Firebase-Benutzer
- * @param {object} options - Callbacks für Datenzugriff
+ * After successful login: sync timetable data
+ * Either load from cloud (if exists) or push local data to cloud (first login)
+ * 
+ * @param {object} user - The logged-in Firebase user
+ * @param {object} options - Callbacks for data access
  */
 async function handleUserLoggedIn(user, { exportLocalData, applyRemoteData }) {
-  const uid = user.uid;
-  let remote = null;
-  
-  // 1. Versuche, Daten aus der Cloud zu laden
-  if (window.cloud?.loadTimetable) {
-    remote = await window.cloud.loadTimetable(uid);
-  }
+  const uid = user.uid;
+  let remote = null;
+  
+  // Try to load data from cloud
+  if (window.cloud?.loadTimetable) {
+    remote = await window.cloud.loadTimetable(uid);
+  }
 
-  if (remote) {
-    // Cloud gewinnt: Cloud-Daten in UI anwenden
-    console.log('[loginMode] Applying remote data from cloud.');
-    applyRemoteData?.(remote);
-  } else if (exportLocalData && window.cloud?.saveTimetable) {
-    // Keine Cloud-Daten → lokale Daten hochladen
-    const local = exportLocalData();
-    if (local) {
-      console.log('[loginMode] Uploading local data to cloud for the first time.');
-      await window.cloud.saveTimetable(uid, local);
-    }
-  }
+  if (remote) {
+    // Cloud data exists: use it (cloud wins on login)
+    console.log('[loginMode] ✓ Applying remote data from cloud');
+    applyRemoteData?.(remote);
+  } else if (exportLocalData && window.cloud?.saveTimetable) {
+    // No cloud data: push local data (first login)
+    const local = exportLocalData();
+    if (local) {
+      console.log('[loginMode] ✓ Uploading local data to cloud (first login)');
+      await window.cloud.saveTimetable(uid, local);
+    }
+  }
 }
-
-
 /**
  * Haupt-Entry: Login-/Mode-Logik booten
- * @param {object} options - Enthält alle benötigten Callbacks
+ * Auth is fully restored by preload.js before this is called:
+ * - Refresh token (Keytar) is exchanged for Google tokens
+ * - Firebase signs in automatically
+ * - This function waits for the first auth event from Firebase
+ * 
+ * @param {object} options - Contains all required callbacks and delegates
  */
 export async function bootLoginMode(options = {}) {
-  const {
-    loadLocalData, 
-    exportLocalData, 
-    applyRemoteData, 
-    updateLoginButton: handleStateDelegate, // handleAuthStateChange aus authState.js
-    showReLoginPopup, 
-  } = options;
-  
-  if (typeof handleStateDelegate !== 'function') {
+  const {
+    loadLocalData, 
+    exportLocalData, 
+    applyRemoteData, 
+    updateLoginButton: handleStateDelegate, // handleAuthStateChange aus authState.js
+    showReLoginPopup, 
+  } = options;  if (typeof handleStateDelegate !== 'function') {
     console.error('[loginMode] Delegate handleAuthStateChange is missing!');
     return;
   }

@@ -67,3 +67,7 @@ node_modules/
 
 # dataconnect generated files
 .dataconnect
+
+# Generated app and tray icons (run npm run build:icon to regenerate)
+assets/icons/app.ico
+assets/icons/tray-*.ico

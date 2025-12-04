@@ -16,45 +16,90 @@ function ensureHourData(sel = '.hour .label') {
   });
 }
 
-/** Checkboxen aus Settings/OS spiegeln */
+/** Checkboxen und Radio-Buttons aus Settings/OS spiegeln */
 async function syncCheckboxes({ labelSelector = '.hour .label' } = {}) {
   const s = getSettings();
-  const light = $('setLight'), h12 = $('set12h'), auto = $('setAuto'), aot = $('setAOT');
-
-  if (light) light.checked = (s.theme === 'light');
-  if (h12)   h12.checked   = !!s.hour12;
-  if (aot)   aot.checked   = (s.alwaysOnTop !== false);
-
+  
+  // Theme radio buttons
+  const themeDark = $('setThemeDark');
+  const themeLight = $('setThemeLight');
+  if (themeDark && themeLight) {
+    if (s.theme === 'light') {
+      themeLight.checked = true;
+    } else {
+      themeDark.checked = true;
+    }
+  }
+  
+  // Time format radio buttons
+  const format24h = $('setFormat24h');
+  const format12h = $('setFormat12h');
+  if (format24h && format12h) {
+    if (s.hour12) {
+      format12h.checked = true;
+    } else {
+      format24h.checked = true;
+    }
+  }
+  
+  // Autostart checkbox
+  const auto = $('setAuto');
   if (auto) {
     if (window.autostart?.get) {
       try { const on = await window.autostart.get(); auto.checked = !!on; }
       catch { auto.checked = !!s.autostart; }
     } else auto.checked = !!s.autostart;
   }
+  
+  // Always on top checkbox
+  const aot = $('setAOT');
+  if (aot) aot.checked = (s.alwaysOnTop !== false);
 
   ensureHourData(labelSelector);
-  console.log(`[${MOD}] checkboxes synced`, { theme: s.theme, hour12: !!s.hour12, aot: aot?.checked, autostart: auto?.checked });
+  console.log(`[${MOD}] settings synced`, { theme: s.theme, hour12: !!s.hour12, aot: aot?.checked, autostart: auto?.checked });
 }
 
 /** Listener (nur einmal verkabeln) */
 let wired = false;
 function wireEvents({ labelSelector = '.hour .label' } = {}) {
-  const el12h = document.getElementById('set12h');
-  if (wired) return; wired = true;
+  if (wired) return; 
+  wired = true;
 
-  $('setLight')?.addEventListener('change', () => {
-    setTheme($('setLight').checked ? 'light' : 'dark');
-  });
-  if (el12h && !el12h._wired) {
-    el12h._wired = true;
-    el12h.addEventListener('change', () => {
-      applyHourFormat(el12h.checked, { labelSelector });
+  // Theme radio buttons
+  const themeDark = $('setThemeDark');
+  const themeLight = $('setThemeLight');
+  if (themeDark) {
+    themeDark.addEventListener('change', () => {
+      if (themeDark.checked) setTheme('dark');
     });
   }
+  if (themeLight) {
+    themeLight.addEventListener('change', () => {
+      if (themeLight.checked) setTheme('light');
+    });
+  }
+  
+  // Time format radio buttons
+  const format12h = $('setFormat12h');
+  if (format12h) {
+    const format24h = $('setFormat24h');
+    if (format24h) {
+      format24h.addEventListener('change', () => {
+        if (format24h.checked) applyHourFormat(false, { labelSelector });
+      });
+    }
+    format12h.addEventListener('change', () => {
+      if (format12h.checked) applyHourFormat(true, { labelSelector });
+    });
+  }
+
+  // Autostart checkbox
   $('setAuto')?.addEventListener('change', async () => {
     const ok = await applyAutostart($('setAuto').checked);
     $('setAuto').checked = ok;
   });
+  
+  // Always on top checkbox
   $('setAOT')?.addEventListener('change', async () => {
     const ok = await applyAOT($('setAOT').checked);
     $('setAOT').checked = ok;
@@ -88,7 +133,11 @@ export async function openSet(options = {}) {
   console.log(`[${MOD}] openSet()`);
 }
 export function closeSet() {
-  $('setOverlay')?.classList.add('hidden');
+  const overlay = $('setOverlay');
+  if (overlay) {
+    overlay.classList.add('hidden');
+    setTimeout(() => {}, 500);
+  }
   console.log(`[${MOD}] closeSet()`);
 }
 

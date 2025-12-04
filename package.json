@@ -1,22 +1,76 @@
 {
   "name": "deskday",
-  "version": "0.1.1",
-  "description": "",
+  "version": "0.6.0",
+  "description": "Simple desktop schedule and time tracking app",
   "main": "main.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "electron ."
+    "start": "electron .",
+    "build:icon": "node scripts/generate-icon.js",
+    "build": "electron-builder --publish never",
+    "build:portable": "electron-builder --win portable --publish never",
+    "dist": "electron-builder --win nsis --publish never"
   },
   "keywords": [],
-  "author": "",
+  "author": "wolfgang anders",
   "license": "ISC",
   "devDependencies": {
-    "electron": "^38.4.0"
+    "electron": "^38.4.0",
+    "electron-builder": "^24.13.3",
+    "png-to-ico": "^2.1.8"
   },
   "dependencies": {
     "@dataconnect/generated": "file:src/dataconnect-generated",
+    "dotenv": "^17.2.3",
+    "electron-updater": "^6.6.2",
     "firebase": "^12.5.0",
     "keytar": "^7.9.0",
     "node-fetch": "^2.7.0"
+  },
+  "build": {
+    "appId": "com.wolle.deskday",
+    "productName": "Deskday",
+    "publish": {
+      "provider": "github",
+      "owner": "wolleanders",
+      "repo": "Deskday"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer.js",
+      "index.html",
+      "style.css",
+      "store.local.js",
+      "modules/**/*",
+      "assets/**/*",
+      "dataconnect/**/*",
+      "node_modules/**/*"
+    ],
+    "directories": {
+      "buildResources": "assets/icons"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icons/app.ico",
+      "sign": null
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Deskday"
+    }
   }
 }

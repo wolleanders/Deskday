@@ -1,87 +1,93 @@
 // modules/authState.js
 // ---------------------
-// Verwaltet den UI-Zustand des Login-Buttons, Cloud-Indikators und Realtime-Listeners.
+// Manages login button UI and delegated auth state changes
+// 
+// Single responsibility: Update UI when Firebase auth state changes
+// - Responds to auth events from loginMode.js (which watches Firebase)
+// - Does NOT manage tokens or persistence (that's main.js + preload.js)
+// - Only controls login button text and event listeners
 
 /**
  * @typedef {object} AuthContext
- * @property {function(string, object|null): void} setMode - Setzt den lokalen/Cloud-Modus (aus loginMode.js)
- * @property {function(): void} loadLocalData - Lädt die lokalen Daten in die UI (aus renderer.js)
- * @property {function(string): void} startRealtimeSync - Startet den Cloud-Sync-Listener (aus renderer.js)
- * @property {function(): void} stopRealtimeSync - Stoppt den Cloud-Sync-Listener (aus renderer.js)
- * @property {function(string, string): Promise<void>} saveTimetable - Speichert Daten in der Cloud (aus window.cloud)
- * @property {function(): object|null} exportLocalData - Liefert aktuelle lokale Daten (aus renderer.js)
+ * @property {function(string, object|null): void} setMode - Set local/cloud mode (from loginMode.js)
+ * @property {function(): void} loadLocalData - Render local data to UI
+ * @property {function(string): void} startRealtimeSync - Start cloud sync listener
+ * @property {function(): void} stopRealtimeSync - Stop cloud sync listener
+ * @property {function(string, string): Promise<void>} saveTimetable - Save data to cloud
+ * @property {function(): object|null} exportLocalData - Get current UI data
  */
 
 let authContext = {};
 const loginBtn = document.getElementById('setLogin');
-// Das globale Flag __deskday_isExplicitlyLoggingOut wird hier benötigt:
+// Global flag to protect logout flow (prevents race conditions)
 window.__deskday_isExplicitlyLoggingOut = false; 
 
 /**
- * Registriert die notwendigen Abhängigkeiten beim App-Start.
- * @param {AuthContext} ctx
+ * Register dependencies and set up handler references
+ * Called once on app startup by renderer.js
+ * 
+ * @param {AuthContext} ctx - Dependencies from renderer.js
  */
 export function initialize(ctx) {
     authContext = ctx;
-    // Hängt die Handler einmalig an das globale window-Objekt
+    // Store handlers globally for event listener attachment
     window.deskdayLoginHandler = handleLoginClick;
     window.deskdayLogoutHandler = handleLogoutClick;
 }
 
 /**
- * ZENTRALE STEUERUNG: Aktualisiert die gesamte UI basierend auf dem Auth-Status.
- * Diese Funktion ist die EINZIGE, die den Button-Zustand setzt und wird vom Firebase-Listener
- * in loginMode.js (und bei Fehlern in den Handlern) aufgerufen.
- * @param {object|null} user - Aktueller Firebase User
+ * CENTRAL CONTROL: Update entire UI based on auth status
+ * Called ONLY from Firebase listener (via loginMode.js)
+ * 
+ * This is the single source of truth for button state and listeners
+ * 
+ * @param {object|null} user - Current Firebase user, or null if logged out
  */
 export function handleAuthStateChange(user) {
     
-    // 1. Alle alten Listener entfernen
+    // 1. Remove old listeners to prevent duplicates
     if (loginBtn) {
         loginBtn.removeEventListener('click', window.deskdayLoginHandler);
         loginBtn.removeEventListener('click', window.deskdayLogoutHandler);
     }
     
-    // Stelle sicher, dass das Lade-Flag zurückgesetzt wird (falls es im Handler hängen geblieben ist)
+    // Reset disabled state (in case it got stuck during a handler)
     if (loginBtn) {
         loginBtn.disabled = false; 
     }
 
-    // 2. Zustand setzen
+    // 2. Set new UI state based on auth
     if (user) {
-        // --- Zustand: ANGEMELDET / CLOUD ---
-        console.log('[authState] State: CLOUD / Logged In');
+        // --- STATE: LOGGED IN / CLOUD MODE ---
+        console.log('[authState] ✓ Logged in:', user.email);
         
-        // Button-UI
-        const displayName = user.displayName || user.email || 'User';
         if (loginBtn) {
             loginBtn.textContent = `Sign out`;
-            // Listener für den Logout-Prozess anhängen
+            // Attach logout handler
             loginBtn.addEventListener('click', window.deskdayLogoutHandler);
         }
 
-        // Cloud-Indikator
-        if (typeof updateCloudStatus === 'function') {
-            updateCloudStatus('cloud', user);
+        // Update cloud status indicator
+        if (typeof authContext.updateCloudStatus === 'function') {
+            authContext.updateCloudStatus('cloud', user);
         }
 
-        // Starte Realtime-Sync
+        // Start realtime sync with cloud
         authContext.startRealtimeSync?.(user.uid);
 
     } else {
-        // --- Zustand: ABGEMELDET / LOKAL ---
-        console.log('[authState] State: LOCAL / Logged Out');
+        // --- STATE: LOGGED OUT / LOCAL MODE ---
+        console.log('[authState] ✗ Logged out');
         
-        // Button-UI
         if (loginBtn) {
             loginBtn.textContent = 'Log in';
-            // Listener für den Login-Prozess anhängen
+            // Attach login handler
             loginBtn.addEventListener('click', window.deskdayLoginHandler);
         }
 
-        // Cloud-Indikator
-        if (typeof updateCloudStatus === 'function') {
-            updateCloudStatus('local', null);
+        // Update cloud status indicator
+        if (typeof authContext.updateCloudStatus === 'function') {
+            authContext.updateCloudStatus('local', null);
         }
 
         // Stoppe Realtime-Sync
