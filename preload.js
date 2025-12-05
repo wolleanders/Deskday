@@ -76,6 +76,11 @@ contextBridge.exposeInMainWorld('winCtl', {
     setAOT: (on) => ipcRenderer.invoke('window:setAlwaysOnTop', on)
 });
 
+contextBridge.exposeInMainWorld('autostart', {
+    get: () => ipcRenderer.invoke('autostart:get'),
+    set: (on) => ipcRenderer.invoke('autostart:set', on)
+});
+
 // ---- Firebase init & Core Logic (async) ----
 (async () => {
     try {
@@ -118,6 +123,7 @@ contextBridge.exposeInMainWorld('winCtl', {
         // 1) Set Firebase Persistence
         try {
             await setPersistence(auth, browserLocalPersistence);
+            console.log('[preload] ✓ browserLocalPersistence enabled');
         } catch (err) {
             console.warn('[preload] setPersistence failed (using default/session)', err);
         }
@@ -125,18 +131,23 @@ contextBridge.exposeInMainWorld('winCtl', {
         // 2) Auto-restore via Refresh Token (Keytar)
         // Try to restore session from saved refresh token on app boot
         try {
+            console.log('[preload] attempting to restore session from refresh token...');
             const refreshResp = await ipcRenderer.invoke('tokens:refreshGoogle', {
                 clientId: DESKTOP_CLIENT_ID
             });
 
             if (refreshResp && refreshResp.id_token) {
+                console.log('[preload] ✓ got refresh token response, signing in to firebase...');
                 const cred = GoogleAuthProvider.credential(refreshResp.id_token, refreshResp.access_token);
                 await signInWithCredential(auth, cred);
                 console.log('[preload] ✓ restored firebase sign-in from refresh token');
+            } else {
+                console.log('[preload] no refresh token available (first login or token cleared)');
             }
         } catch (e) {
             // Failure is normal if no refresh token saved (first login)
             // or if token is expired/revoked
+            console.error('[preload] token restoration failed:', String(e));
             if (String(e).includes('invalid_grant')) {
                 console.log('[preload] refresh token was revoked, clearing');
                 await ipcRenderer.invoke('tokens:deleteRefresh').catch(() => {});
@@ -154,7 +165,9 @@ contextBridge.exposeInMainWorld('winCtl', {
             if (!initialDone) {
                 initialDone = true;
                 __dd_firebaseReady = true;
-                // Optional: Check if we have a user from persistence/refresh
+                console.log('[preload] ✓ Firebase auth ready, initial user:', __dd_currentUser ? __dd_currentUser.email : 'NOT LOGGED IN');
+            } else {
+                console.log('[preload] auth state changed:', __dd_currentUser ? __dd_currentUser.email : 'logged out');
             }
             __dd_invokeOnChangeCallbacks();
         });
@@ -179,7 +192,11 @@ contextBridge.exposeInMainWorld('winCtl', {
                     
                     // Save refresh token to Keytar (secure storage)
                     if (refreshToken) {
+                        console.log('[preload] saving refresh token to keytar...');
                         await ipcRenderer.invoke('tokens:saveRefresh', refreshToken);
+                        console.log('[preload] ✓ refresh token saved');
+                    } else {
+                        console.warn('[preload] ⚠ no refreshToken from google-oauth:start!');
                     }
                     
                     // Give Firebase time to persist the session locally
