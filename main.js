@@ -17,6 +17,11 @@ console.log('[main] userData path:', app.getPath('userData'));
 //##########################################################################################
 // Note: checkForUpdatesAndNotify() must be called AFTER app is ready, not at module load time
 
+// Configure electron-updater with detailed logging
+autoUpdater.logger = require('electron-log');
+autoUpdater.logger.transports.file.level = 'debug';
+console.log('[updater] Auto-updater configured with logger');
+
 //##########################################################################################
 // AUTH TOKEN HANDLERS - Secure Refresh Token Storage via Keytar
 // Persistent login: Refresh token (Keytar) + Firebase session (browserLocalPersistence)

@@ -1,6 +1,6 @@
 {
   "name": "deskday",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "description": "Simple desktop schedule and time tracking app",
   "main": "main.js",
   "scripts": {
@@ -72,7 +72,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Deskday"
+      "shortcutName": "Deskday",
+      "artifactName": "${productName} Setup ${version}.exe"
     }
   }
 }

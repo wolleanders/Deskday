@@ -1011,7 +1011,14 @@ html[data-theme="light"] .set-btn {
 .set-card #cloudStatus.cloud-on,
 .set-card > .cloud-indicator.cloud-on {
   opacity: 1;
-  color: var(--accent-2);
+  color: #ffffff;
+}
+
+@media (prefers-color-scheme: light) {
+  .set-card #cloudStatus.cloud-on,
+  .set-card > .cloud-indicator.cloud-on {
+    color: #000000;
+  }
 }
 /* precise cloud + close placement inside the set-card (most specific selector to override earlier rules) */
 .set-card > .cloud-indicator,
@@ -1061,7 +1068,13 @@ html[data-theme="light"] .set-btn {
 
 .cloud-indicator.cloud-on {
   opacity: 1;
-  color: var(--accent-2);
+  color: #ffffff;
+}
+
+@media (prefers-color-scheme: light) {
+  .cloud-indicator.cloud-on {
+    color: #000000;
+  }
 }
 
 .cloud-indicator.cloud-off::after {
