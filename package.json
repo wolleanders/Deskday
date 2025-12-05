@@ -1,6 +1,6 @@
 {
   "name": "deskday",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "Simple desktop schedule and time tracking app",
   "main": "main.js",
   "scripts": {
@@ -9,6 +9,8 @@
     "build:icon": "node scripts/generate-icon.js",
     "build": "electron-builder --publish never",
     "build:portable": "electron-builder --win portable --publish never",
+    "build:clean": "rd /s /q dist 2>nul || del /f /s /q dist 2>nul || true",
+    "build:prod": "npm run build:clean && npm run build:portable",
     "dist": "electron-builder --win nsis --publish never"
   },
   "keywords": [],
