@@ -8,7 +8,7 @@
     "start": "electron .",
     "build:icon": "node scripts/generate-icon.js",
     "build": "electron-builder --publish never",
-    "build:portable": "electron-builder --win portable --publish never",
+    "build:portable": "electron-builder --publish never",
     "build:clean": "rd /s /q dist 2>nul || del /f /s /q dist 2>nul || true",
     "build:prod": "npm run build:clean && npm run build:portable",
     "dist": "electron-builder --win nsis --publish never"
@@ -55,7 +55,7 @@
     "win": {
       "target": [
         {
-          "target": "portable",
+          "target": "nsis",
           "arch": [
             "x64"
           ]

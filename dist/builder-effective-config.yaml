@@ -21,7 +21,7 @@ files:
       - node_modules/**/*
 win:
   target:
-    - target: portable
+    - target: nsis
       arch:
         - x64
   icon: assets/icons/app.ico

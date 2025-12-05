@@ -13,11 +13,9 @@ require('dotenv').config();
 console.log('[main] userData path:', app.getPath('userData'));
 
 //##########################################################################################
-// AUTO-UPDATE SETUP
+// AUTO-UPDATE SETUP - called after app.whenReady() below
 //##########################################################################################
-autoUpdater.checkForUpdatesAndNotify().catch(e => {
-  console.warn('[main] auto-updater check failed:', e);
-});
+// Note: checkForUpdatesAndNotify() must be called AFTER app is ready, not at module load time
 
 //##########################################################################################
 // AUTH TOKEN HANDLERS - Secure Refresh Token Storage via Keytar
@@ -439,10 +437,18 @@ nativeTheme.on('updated', () => {
   }
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   createWindow();
   createTray();
   if (process.platform === 'darwin') app.dock.hide(); // optional
+
+  // Auto-updater: check for updates after window is ready
+  console.log('[main] app ready - checking for updates...');
+  setTimeout(() => {
+    autoUpdater.checkForUpdatesAndNotify().catch(e => {
+      console.warn('[main] auto-updater check failed:', e);
+    });
+  }, 2000); // 2 second delay to ensure everything is initialized
 });
 
 // IPC
