@@ -8,6 +8,8 @@ import { scheduleCloudSave } from "./modules/cloudSync.js";
 import { isFirstStartup, getOnboardingStep, completeOnboarding } from './modules/onboarding.js';
 import { startOnboarding, finishOnboarding, isOnboardingActive, handleAuthChangeInOnboarding } from './modules/onboardingUI.js';
 import { installResetShortcut } from './modules/resetHelper.js';
+import { initCloudApi, bootNotes } from './modules/notes.js';
+import { initNotesUI, openNotePanel, closeNotePanel } from './modules/notesUI.js';
 // auth-state kept separate; may be undefined in some runs
 import * as AuthState from './modules/authState.js';
 
@@ -1534,6 +1536,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // Mark boot phase as complete (stop showing toast on subsequent logins)
     isBooting = false;
+    
+    // Initialize notes UI
+    try {
+        initNotesUI();
+        const addNoteBtn = document.getElementById('addNoteBtn');
+        if (addNoteBtn) {
+            addNoteBtn.addEventListener('click', openNotePanel);
+        }
+        // Initialize cloud API for notes
+        if (window.cloud) {
+            initCloudApi(window.cloud);
+        }
+        // Boot notes (load today's note if logged in)
+        await bootNotes();
+        console.log('[renderer] notes module initialized');
+    } catch (e) {
+        console.warn('[renderer] notes initialization failed:', e);
+    }
     
     // Install reset shortcut (Ctrl+Shift+R) for testing
     try { installResetShortcut(); } catch (e) { console.warn('[renderer] reset shortcut install failed', e); }
