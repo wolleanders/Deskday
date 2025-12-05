@@ -34,5 +34,5 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: Deskday
-  artifactName: ${productName} Setup ${version}.exe
+  artifactName: ${productName}.Setup.${version}.exe
 electronVersion: 38.4.0

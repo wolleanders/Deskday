@@ -17,11 +17,6 @@ console.log('[main] userData path:', app.getPath('userData'));
 //##########################################################################################
 // Note: checkForUpdatesAndNotify() must be called AFTER app is ready, not at module load time
 
-// Configure electron-updater with detailed logging
-autoUpdater.logger = require('electron-log');
-autoUpdater.logger.transports.file.level = 'debug';
-console.log('[updater] Auto-updater configured with logger');
-
 //##########################################################################################
 // AUTH TOKEN HANDLERS - Secure Refresh Token Storage via Keytar
 // Persistent login: Refresh token (Keytar) + Firebase session (browserLocalPersistence)
@@ -532,7 +527,10 @@ ipcMain.handle('updater:installUpdate', async () => {
 ipcMain.handle('updater:checkForUpdates', async () => {
   try {
     const result = await autoUpdater.checkForUpdates();
-    return { available: result.updateInfo !== null };
+    console.log('[main] checkForUpdates result:', JSON.stringify(result));
+    const available = result && result.updateInfo && result.updateInfo.version;
+    console.log('[main] Update available?', available);
+    return { available: !!available };
   } catch (e) {
     console.warn('[main] Check for updates failed:', e);
     return { available: false };

@@ -73,7 +73,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Deskday",
-      "artifactName": "${productName} Setup ${version}.exe"
+      "artifactName": "${productName}.Setup.${version}.exe"
     }
   }
 }
