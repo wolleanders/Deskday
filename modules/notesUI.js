@@ -75,13 +75,16 @@ export async function openNotePanel() {
   if (notePanelEl) {
     notePanelEl.classList.remove('hidden');
     notePanelEl.style.display = 'flex';
+    
+    // Temporarily allow body overflow so panel can escape
+    document.body.style.overflow = 'visible';
   }
   
   // Add active class to button for rotation
   const addNoteBtn = document.getElementById('addNoteBtn');
   if (addNoteBtn) {
     addNoteBtn.classList.add('active');
-    addNoteBtn.textContent = '✕';
+    addNoteBtn.innerHTML = '&times;';  // Use HTML entity for consistent sizing
   }
   
   // Load today's note
@@ -99,6 +102,9 @@ export function closeNotePanel() {
   if (notePanelEl) {
     notePanelEl.classList.add('hidden');
     notePanelEl.style.display = 'none';
+    
+    // Restore body overflow
+    document.body.style.overflow = 'hidden';
   }
   
   // Remove active class from button and reset icon

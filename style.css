@@ -1600,8 +1600,10 @@ html[data-theme="light"] .onboarding-btn-secondary:hover:not(:disabled) {
   z-index: 10000;
   font-family: var(--font-ui);
   color: var(--fg);
-  transform: none;
-  clip-path: unset;
+  transform: none !important;
+  clip-path: unset !important;
+  overflow: visible !important;
+  pointer-events: auto;
 }
 
 .note-panel.hidden {
