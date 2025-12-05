@@ -1597,13 +1597,12 @@ html[data-theme="light"] .onboarding-btn-secondary:hover:not(:disabled) {
   box-shadow: 0 4px 16px rgba(0,0,0,0.3);
   display: flex;
   flex-direction: column;
-  z-index: 10000;
+  z-index: 99999 !important;
   font-family: var(--font-ui);
   color: var(--fg);
-  transform: none !important;
-  clip-path: unset !important;
-  overflow: visible !important;
   pointer-events: auto;
+  will-change: transform;
+  backface-visibility: hidden;
 }
 
 .note-panel.hidden {
