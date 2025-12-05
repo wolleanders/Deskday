@@ -52,11 +52,12 @@ ipcMain.handle('tokens:refreshGoogle', async (_, { clientId } = {}) => {
 
   const url = 'https://oauth2.googleapis.com/token';
   // Include client_secret from env (required for refresh token exchange)
+  // Use hardcoded fallback for packaged app (dotenv not available in ASAR)
   const body = new URLSearchParams({
     grant_type: 'refresh_token',
     refresh_token: refreshToken,
-    client_id: clientId || process.env.GOOGLE_CLIENT_ID || '',
-    client_secret: process.env.GOOGLE_CLIENT_SECRET || ''
+    client_id: clientId || process.env.GOOGLE_CLIENT_ID || '1068554735717-haqdeeoaejhbsmn3f807vqnq3arnv5gk.apps.googleusercontent.com',
+    client_secret: process.env.GOOGLE_CLIENT_SECRET || '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'
   });
 
   try {
