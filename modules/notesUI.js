@@ -49,6 +49,18 @@ export function initNotesUI() {
   makeNotePanelDraggable();
   makeNotePanelResizable();
   
+  // Wire add note button toggle
+  const addNoteBtn = document.getElementById('addNoteBtn');
+  if (addNoteBtn) {
+    addNoteBtn.addEventListener('click', () => {
+      if (isPanelOpen) {
+        closeNotePanel();
+      } else {
+        openNotePanel();
+      }
+    });
+  }
+  
   console.log(`[${MOD}] UI initialized`);
   return true;
 }
@@ -63,6 +75,13 @@ export async function openNotePanel() {
   if (notePanelEl) {
     notePanelEl.classList.remove('hidden');
     notePanelEl.style.display = 'flex';
+  }
+  
+  // Add active class to button for rotation
+  const addNoteBtn = document.getElementById('addNoteBtn');
+  if (addNoteBtn) {
+    addNoteBtn.classList.add('active');
+    addNoteBtn.textContent = '✕';
   }
   
   // Load today's note
@@ -82,6 +101,13 @@ export function closeNotePanel() {
     notePanelEl.style.display = 'none';
   }
   
+  // Remove active class from button and reset icon
+  const addNoteBtn = document.getElementById('addNoteBtn');
+  if (addNoteBtn) {
+    addNoteBtn.classList.remove('active');
+    addNoteBtn.textContent = '+';
+  }
+  
   // Hide archive view
   if (archiveViewEl) archiveViewEl.style.display = 'none';
   if (noteEditViewEl) noteEditViewEl.style.display = 'flex';
@@ -95,7 +121,8 @@ async function loadTodayNote() {
     
     if (noteTextEl) {
       noteTextEl.value = note.text || '';
-      noteTextEl.focus();
+      noteTextEl.readOnly = false;  // Ensure it's editable
+      noteTextEl.focus();  // Focus for immediate typing
     }
     
     setCurrentNote(today, note.text || '');

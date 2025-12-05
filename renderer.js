@@ -1540,10 +1540,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Initialize notes UI
     try {
         initNotesUI();
-        const addNoteBtn = document.getElementById('addNoteBtn');
-        if (addNoteBtn) {
-            addNoteBtn.addEventListener('click', openNotePanel);
-        }
         // Initialize cloud API for notes
         if (window.cloud) {
             initCloudApi(window.cloud);
