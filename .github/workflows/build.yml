@@ -28,9 +28,18 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Get release info
+        id: release_info
+        run: |
+          $tag = "${{ github.ref }}" -replace 'refs/tags/', ''
+          echo "tag=$tag" >> $env:GITHUB_OUTPUT
+
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
         with:
           files: dist/*.exe
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
