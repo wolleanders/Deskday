@@ -1600,6 +1600,8 @@ html[data-theme="light"] .onboarding-btn-secondary:hover:not(:disabled) {
   z-index: 10000;
   font-family: var(--font-ui);
   color: var(--fg);
+  transform: none;
+  clip-path: unset;
 }
 
 .note-panel.hidden {
@@ -1754,7 +1756,7 @@ html[data-theme="light"] .onboarding-btn-secondary:hover:not(:disabled) {
 }
 
 .add-note-btn.active {
-  transform: rotate(45deg);
+  transform: rotate(90deg);
 }
 
 /* Light mode adjustments */
