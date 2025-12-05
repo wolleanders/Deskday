@@ -26,6 +26,7 @@
   --ex-windows-border: #1a1a1a;
   --accent: #ffffff;
   --accent-2: #d7c957; /* optionale Taktlinie (gelblich) */
+  --cloud-indicator: #ffffff; /* cloud indicator color for dark mode */
   --shadow: rgba(0,0,0,.4);
   --box: #0e0e0e;
   color-scheme: dark;
@@ -62,6 +63,7 @@ html[data-theme="light"] {
   --line: #c9c9c9;
   --accent: #111111;
   --accent-2: #37a0f0; /* bläuliche Taktlinie */
+  --cloud-indicator: #000000; /* cloud indicator color for light mode */
   --shadow: rgba(0,0,0,.1);
   --box: #ebebeb;
   color-scheme: light;

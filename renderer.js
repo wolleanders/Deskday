@@ -690,7 +690,7 @@ const cloudStatusEl = document.getElementById('cloudStatus');
     .cloud-indicator::before, .cloud-indicator::after { display: none !important; }
 
     /* Ensure cloud-on looks full and readable; cloud-off muted */
-    .cloud-indicator.cloud-on { color: var(--accent-2) !important; opacity: 1 !important; text-decoration: none !important; filter: none !important; }
+    .cloud-indicator.cloud-on { color: var(--cloud-indicator) !important; opacity: 1 !important; text-decoration: none !important; filter: none !important; }
     .cloud-indicator.cloud-off { opacity: 0.6 !important; text-decoration: none !important; filter: none !important; }
 
     /* defensive: ensure the glyph itself isn't dimmed by user-agent rules */
@@ -753,7 +753,7 @@ try { window.setCloudState = setCloudState; } catch(e) {}
     .set-card > .cloud-indicator.cloud-on,
     #cloudStatus.cloud-indicator.cloud-on,
     .cloud-indicator.cloud-on {
-      color: var(--accent-2) !important;
+      color: var(--cloud-indicator) !important;
       opacity: 1 !important;
       text-decoration: none !important;
       filter: none !important;
