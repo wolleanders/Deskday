@@ -304,7 +304,4 @@ function formatDateDisplay(iso) {
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-// ========== EXPORTS ==========
-export { openNotePanel, closeNotePanel, initNotesUI };
-
 console.log(`[load] ${MOD} ready (exports: initNotesUI, openNotePanel, closeNotePanel)`);
