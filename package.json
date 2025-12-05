@@ -1,6 +1,6 @@
 {
   "name": "deskday",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "description": "Simple desktop schedule and time tracking app",
   "main": "main.js",
   "scripts": {
@@ -35,7 +35,8 @@
     "publish": {
       "provider": "github",
       "owner": "wolleanders",
-      "repo": "Deskday"
+      "repo": "Deskday",
+      "releaseType": "release"
     },
     "files": [
       "main.js",

@@ -442,6 +442,40 @@ app.whenReady().then(async () => {
   createTray();
   if (process.platform === 'darwin') app.dock.hide(); // optional
 
+  // Configure auto-updater with GitHub feed URL
+  // Using raw.githubusercontent.com to bypass CDN issues with release assets
+  try {
+    const feedUrl = 'https://raw.githubusercontent.com/wolleanders/Deskday/main/latest.yml';
+    autoUpdater.setFeedURL({
+      provider: 'generic',
+      url: feedUrl
+    });
+    console.log('[main] auto-updater feed configured:', feedUrl);
+  } catch (e) {
+    console.warn('[main] failed to set feed URL:', e.message);
+    // Fallback to standard GitHub provider
+    try {
+      autoUpdater.setFeedURL({
+        provider: 'github',
+        owner: 'wolleanders',
+        repo: 'Deskday'
+      });
+      console.log('[main] fallback: using standard GitHub provider');
+    } catch (e2) {
+      console.warn('[main] fallback also failed:', e2.message);
+    }
+  }
+
+  // Enable auto-updater debug logging
+  try {
+    // Configure auto-updater with more verbose logging
+    autoUpdater.logger = require('electron-log');
+    autoUpdater.logger.transports.file.level = 'debug';
+    console.log('[main] auto-updater debug logging enabled');
+  } catch (e) {
+    console.log('[main] auto-updater debug logging failed:', e.message);
+  }
+
   // Auto-updater: check for updates after window is ready
   console.log('[main] app ready - checking for updates...');
   setTimeout(() => {
@@ -526,13 +560,23 @@ ipcMain.handle('updater:installUpdate', async () => {
 // IPC handler for renderer to check for updates manually
 ipcMain.handle('updater:checkForUpdates', async () => {
   try {
+    console.log('[main] checkForUpdates: starting...');
+    console.log('[main] checkForUpdates: current version:', app.getVersion());
+    
     const result = await autoUpdater.checkForUpdates();
-    console.log('[main] checkForUpdates result:', JSON.stringify(result));
+    
+    console.log('[main] checkForUpdates result:', JSON.stringify(result, null, 2));
     const available = result && result.updateInfo && result.updateInfo.version;
     console.log('[main] Update available?', available);
+    
+    if (result && result.updateInfo) {
+      console.log('[main] updateInfo details:', JSON.stringify(result.updateInfo, null, 2));
+    }
+    
     return { available: !!available };
   } catch (e) {
-    console.warn('[main] Check for updates failed:', e);
+    console.error('[main] Check for updates failed:', e);
+    console.error('[main] Error stack:', e.stack);
     return { available: false };
   }
 });
