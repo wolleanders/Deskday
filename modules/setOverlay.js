@@ -130,6 +130,8 @@ export async function openSet(options = {}) {
   await syncCheckboxes(options);
   wireEvents(options);
   $('setOverlay')?.classList.remove('hidden');
+  // Hide add note button when settings opens
+  $('addNoteBtn')?.classList.add('hidden');
   console.log(`[${MOD}] openSet()`);
 }
 export function closeSet() {
@@ -138,6 +140,8 @@ export function closeSet() {
     overlay.classList.add('hidden');
     setTimeout(() => {}, 500);
   }
+  // Show add note button when settings closes
+  $('addNoteBtn')?.classList.remove('hidden');
   console.log(`[${MOD}] closeSet()`);
 }
 

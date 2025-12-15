@@ -1,6 +1,6 @@
 {
   "name": "deskday",
-  "version": "0.7.1",
+  "version": "7.0.0",
   "description": "Simple desktop schedule and time tracking app",
   "main": "main.js",
   "scripts": {

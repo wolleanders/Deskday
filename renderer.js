@@ -9,7 +9,7 @@ import { isFirstStartup, getOnboardingStep, completeOnboarding } from './modules
 import { startOnboarding, finishOnboarding, isOnboardingActive, handleAuthChangeInOnboarding } from './modules/onboardingUI.js';
 import { installResetShortcut } from './modules/resetHelper.js';
 import { initCloudApi, bootNotes } from './modules/notes.js';
-import { initNotesUI, openNotePanel, closeNotePanel } from './modules/notesUI.js';
+import { initNotesUI } from './modules/notesUI.js';
 // auth-state kept separate; may be undefined in some runs
 import * as AuthState from './modules/authState.js';
 
@@ -264,6 +264,8 @@ function openSEE(prefill={start:5,end:22}){
   seeEnd.placeholder   = String(prefill.end);
   updateSeeButton();
   seeOverlay.classList.remove('hidden');
+  // Hide add note button when SEE opens
+  document.getElementById('addNoteBtn')?.classList.add('hidden');
   seeStart.focus();
 }
 function closeSEE(){ 
@@ -271,6 +273,8 @@ function closeSEE(){
     seeOverlay.classList.add('hidden');
     setTimeout(() => {}, 500);
   }
+  // Show add note button when SEE closes
+  document.getElementById('addNoteBtn')?.classList.remove('hidden');
 }
 
 ['input','change','keyup'].forEach(ev=>{
@@ -1404,6 +1408,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const initialSettings = getSettings();
     applyHourFormat(initialSettings.hour12, {labelSelector: '.hour .label'});
     try { await bootSettings({ labelSelector: '.hour .label' }); } catch (e) { console.error('bootSettings failed', e); }
+    
+    // Sync initial settings to main process for notes window to access
+    try {
+      if (window.__deskday_platform?.ipcRenderer) {
+        window.__deskday_platform.ipcRenderer.send('settings:changed', initialSettings);
+      }
+    } catch (e) { console.warn('Failed to sync settings to main process', e); }
 
     // Defensive AuthState.initialize (BEIBEHALTEN)
     try {

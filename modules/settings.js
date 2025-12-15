@@ -25,6 +25,16 @@ export function setSettings(patch) {
   const next = { ...getSettings(), ...patch };
   localStorage.setItem(KEY, JSON.stringify(next));
   window.settings?.set?.(patch); // optional
+  
+  // Broadcast settings change to notes window via IPC
+  try {
+    if (window.__deskday_platform?.ipcRenderer) {
+      window.__deskday_platform.ipcRenderer.send('settings:changed', patch);
+    }
+  } catch (e) {
+    console.warn('[settings] failed to broadcast settings change', e);
+  }
+  
   return next;
 }
 

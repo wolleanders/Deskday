@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval'"/>
+  <title>Deskday Notes</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      height: 100%;
+      background: transparent;
+      color: var(--fg);
+      font-family: var(--font-ui);
+      -webkit-app-region: drag;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      user-select: none;
+      background: transparent;
+    }
+
+    #notesWindowContent {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: transparent;
+      color: var(--fg);
+      border-radius: var(--radius);
+      border: none;
+      -webkit-app-region: no-drag;
+    }
+
+    .notes-header {
+      padding: 8px 12px;
+      flex-shrink: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      -webkit-app-region: drag;
+    }
+
+    .notes-header h2 {
+      margin: 0;
+      font-size: 12px;
+      font-weight: 600;
+      background: transparent;
+      color: var(--fg);
+      cursor: move;
+      -webkit-user-select: none;
+    }
+
+    .notes-header-buttons {
+      display: flex;
+      gap: 8px;
+      -webkit-app-region: no-drag;
+    }
+
+    .notes-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 2px 4px;
+      transition: color 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .notes-btn:hover {
+      color: var(--accent);
+    }
+
+    .notes-btn svg {
+      width: 16px;
+      height: 16px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.5;
+    }
+
+    #notesTextarea {
+      flex: 1;
+      border: none;
+      padding: 12px;
+      background: var(--surface);
+      color: var(--fg);
+      font-family: var(--font-ui);
+      font-size: 13px;
+      line-height: 20px;
+      resize: none;
+      outline: none;
+      -webkit-app-region: no-drag;
+      transition: background-color 0.25s linear, color 0.25s linear;
+    }
+
+    #notesTextarea::placeholder {
+      color: var(--muted);
+    }
+
+    .notes-footer {
+      padding: 6px 12px;
+      background: var(--surface);
+      font-size: 11px;
+      color: var(--muted);
+      flex-shrink: 0;
+      -webkit-app-region: no-drag;
+    }
+  </style>
+</head>
+<body>
+  <div id="notesWindowContent">
+    <div class="notes-header">
+      <h2>Daily Notes</h2>
+      <div class="notes-header-buttons">
+        <button id="archiveBtn" class="notes-btn" title="View archive" aria-label="View archive">
+          <svg viewBox="0 0 24 24">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 4.5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6.5A2.5 2.5 0 0 1 4 19.5M4 4.5v14a2 2 0 0 0 2 2h12"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <textarea id="notesTextarea" placeholder="Write your notes here..."></textarea>
+    <div class="notes-footer">
+      <span id="notesDate">Today</span>
+    </div>
+  </div>
+
+  <script type="module">
+    import { loadNote, saveNoteDebounced } from './modules/notes.js';
+    import { openArchive } from './modules/notesArchiveUI.js';
+
+    const MOD = '[notes-window]';
+    let currentDate = null;
+    let savePositionTimeout;
+
+    const textarea = document.getElementById('notesTextarea');
+    const dateEl = document.getElementById('notesDate');
+    const archiveBtn = document.getElementById('archiveBtn');
+    const html = document.documentElement;
+    const body = document.body;
+
+    // Window position state file path
+    const stateKey = 'deskday.notesWindow.state';
+
+    // ===== THEME MANAGEMENT =====
+    // Sync theme with main window - read immediately and set before content renders
+    // Match the pattern from renderer.js
+    function applyTheme() {
+      let theme = localStorage.getItem('tt.settings');
+      if (theme) {
+        try {
+          theme = JSON.parse(theme).theme || 'dark';
+        } catch {
+          theme = 'dark';
+        }
+      } else {
+        theme = 'dark';
+      }
+      
+      if (theme === 'light') {
+        html.setAttribute('data-theme', 'light');
+      } else {
+        html.removeAttribute('data-theme');
+      }
+      console.log(`${MOD} theme applied: ${theme}`);
+    }
+
+    // ===== WINDOW POSITION PERSISTENCE =====
+    // Load saved window state
+    function loadWindowState() {
+      try {
+        const raw = localStorage.getItem(stateKey);
+        if (!raw) return null;
+        const state = JSON.parse(raw);
+        console.log(`${MOD} loaded window state:`, state);
+        return state;
+      } catch (e) {
+        console.warn(`${MOD} failed to load window state`, e);
+        return null;
+      }
+    }
+
+    // Save window state (debounced)
+    function scheduleWindowStateSave() {
+      clearTimeout(savePositionTimeout);
+      savePositionTimeout = setTimeout(() => {
+        try {
+          const { ipcRenderer } = window.__deskday_platform || {};
+          if (!ipcRenderer) return;
+
+          // Get current window bounds from Electron (via IPC would be needed)
+          // For now, we'll store it when the window is about to close
+          console.log(`${MOD} window state save scheduled`);
+        } catch (e) {
+          console.warn(`${MOD} failed to save window state`, e);
+        }
+      }, 800);
+    }
+
+    // Listen for Electron's "will-close" or use window events
+    // Store window bounds before close
+    function saveWindowStateFinal() {
+      try {
+        // Request current bounds from main process
+        if (window.__deskday_platform?.ipcRenderer) {
+          window.__deskday_platform.ipcRenderer.invoke('notes:getWindowBounds').then(bounds => {
+            if (bounds) {
+              localStorage.setItem(stateKey, JSON.stringify(bounds));
+              console.log(`${MOD} window state saved:`, bounds);
+            }
+          }).catch(e => console.warn(`${MOD} getWindowBounds failed`, e));
+        }
+      } catch (e) {
+        console.warn(`${MOD} failed to save window state on close`, e);
+      }
+    }
+
+    // ===== INITIALIZATION =====
+    async function bootNotes() {
+      console.log(`${MOD} booting notes window`);
+      
+      let fetchedSettings = null;
+      
+      // Get current settings from main process
+      try {
+        if (window.__deskday_platform?.ipcRenderer) {
+          fetchedSettings = await window.__deskday_platform.ipcRenderer.invoke('settings:get');
+          if (fetchedSettings) {
+            localStorage.setItem('tt.settings', JSON.stringify(fetchedSettings));
+            console.log(`${MOD} settings initialized from main process`, fetchedSettings);
+          }
+        }
+      } catch (e) {
+        console.warn(`${MOD} failed to get settings from main process`, e);
+      }
+      
+      // Apply theme IMMEDIATELY before any rendering
+      applyTheme();
+      
+      // Apply alwaysOnTop setting with fetched value
+      await applyAlwaysOnTop(fetchedSettings?.alwaysOnTop);
+      
+      // Load and apply saved window position (if available)
+      const savedState = loadWindowState();
+      if (savedState && window.__deskday_platform?.ipcRenderer) {
+        try {
+          await window.__deskday_platform.ipcRenderer.invoke('notes:setWindowBounds', savedState);
+          console.log(`${MOD} window position restored`);
+        } catch (e) {
+          console.warn(`${MOD} failed to restore window position`, e);
+        }
+      }
+      
+      // Update date display
+      const now = new Date();
+      currentDate = now.toISOString().split('T')[0];
+      const opts = { weekday: 'short', month: 'short', day: 'numeric' };
+      const dateStr = now.toLocaleDateString('en-US', opts);
+      dateEl.textContent = dateStr;
+      
+      // Load note from storage
+      const note = await loadNote(currentDate);
+      textarea.value = note.text || '';
+      console.log(`${MOD} note loaded: ${note.text?.length || 0} chars`);
+    }
+
+    // ===== EVENT LISTENERS =====
+    // Auto-save on input
+    textarea.addEventListener('input', (e) => {
+      saveNoteDebounced(currentDate, e.target.value);
+    });
+
+    // Archive button
+    archiveBtn.addEventListener('click', async () => {
+      console.log(`${MOD} archive button clicked`);
+      await openArchive();
+    });
+
+    // Track window move/resize for position saving
+    window.addEventListener('move', () => {
+      scheduleWindowStateSave();
+    });
+
+    window.addEventListener('resize', () => {
+      scheduleWindowStateSave();
+    });
+
+    // Listen for settings changes from main window (storage event)
+    // This fires when main window or any context changes localStorage
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'tt.settings') {
+        console.log(`${MOD} storage event: tt.settings changed`);
+        applyTheme();
+        applyAlwaysOnTop();
+      }
+    });
+
+    // Listen for settings changes via IPC from main process
+    if (window.__deskday_platform?.ipcRenderer) {
+      window.__deskday_platform.ipcRenderer.on('settings:changed', (_, patch) => {
+        console.log(`${MOD} settings changed via IPC:`, patch);
+        
+        if (patch.theme !== undefined) {
+          applyTheme();
+        }
+        if (patch.alwaysOnTop !== undefined) {
+          applyAlwaysOnTop(patch.alwaysOnTop);
+        }
+      });
+    }
+
+    // Apply alwaysOnTop setting
+    async function applyAlwaysOnTop(alwaysOnTopValue) {
+      try {
+        console.log(`${MOD} applyAlwaysOnTop called with value:`, alwaysOnTopValue);
+        
+        // Use the value passed from IPC patch if available
+        let alwaysOnTop = alwaysOnTopValue;
+        
+        // Fallback to reading from main settings if not provided
+        if (alwaysOnTop === undefined) {
+          console.log(`${MOD} no value provided, reading from localStorage`);
+          let settings = localStorage.getItem('tt.settings');
+          if (!settings) {
+            console.warn(`${MOD} no settings in localStorage`);
+            return;
+          }
+          
+          settings = JSON.parse(settings);
+          alwaysOnTop = settings.alwaysOnTop !== false; // default true
+          console.log(`${MOD} read from localStorage, alwaysOnTop:`, alwaysOnTop);
+        }
+        
+        if (window.__deskday_platform?.ipcRenderer) {
+          const result = await window.__deskday_platform.ipcRenderer.invoke('notes:setAlwaysOnTop', alwaysOnTop);
+          console.log(`${MOD} alwaysOnTop applied: ${alwaysOnTop}, result:`, result);
+        } else {
+          console.warn(`${MOD} ipcRenderer not available`);
+        }
+      } catch (e) {
+        console.warn(`${MOD} failed to apply alwaysOnTop`, e);
+      }
+    }
+
+    // Save position before window closes
+    window.addEventListener('beforeunload', () => {
+      saveWindowStateFinal();
+    });
+
+    // Boot
+    bootNotes().catch(e => console.error(`${MOD} boot failed`, e));
+  </script>
+</body>
+</html>

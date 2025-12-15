@@ -108,6 +108,8 @@ let saveStateTimeout;
 let lastSavedBounds = null;
 
 let win; // settingsWin ist aktuell unbenutzt
+let notesWin; // Separate floating notes window
+let currentSettings = { theme: 'dark', hour12: false, autostart: false, alwaysOnTop: true }; // Cache settings
 app.isQuiting = false;
 
 // Ensure Windows AppUserModelID is set for taskbar / notifications grouping
@@ -437,6 +439,187 @@ nativeTheme.on('updated', () => {
     tray = createTray();
   }
 });
+
+// ========== NOTES WINDOW ==========
+function createNotesWindow() {
+  if (notesWin) {
+    notesWin.focus();
+    return notesWin;
+  }
+
+  const iconPath = path.join(__dirname, 'assets', 'icons', 'app.ico');
+  let chosenIcon = null;
+  try {
+    if (fs.existsSync(iconPath)) {
+      chosenIcon = iconPath;
+    }
+  } catch (e) {}
+  
+  if (!chosenIcon) {
+    const pngCandidates = [
+      path.join(__dirname, 'assets', 'icons', 'Icon', 'Square44x44Logo.targetsize-256.png'),
+      path.join(__dirname, 'assets', 'icons', 'Icon', 'Square150x150Logo.scale-400.png'),
+    ];
+    for (const p of pngCandidates) {
+      try { if (fs.existsSync(p)) { chosenIcon = p; break; } } catch (e) {}
+    }
+  }
+
+  // Try to load saved position
+  let winBounds = { width: 500, height: 600 };
+  try {
+    const stateFile = path.join(app.getPath('userData'), 'notes-window-state.json');
+    if (fs.existsSync(stateFile)) {
+      const saved = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+      winBounds = { ...winBounds, ...saved };
+      console.log('[main] notes window state restored:', winBounds);
+    }
+  } catch (e) {
+    console.warn('[main] failed to restore notes window state', e);
+  }
+
+  // Determine alwaysOnTop from cached settings
+  let alwaysOnTop = currentSettings.alwaysOnTop !== false; // default true
+
+  notesWin = new BrowserWindow({
+    width: winBounds.width || 360,
+    height: winBounds.height || 300,
+    x: winBounds.x,
+    y: winBounds.y,
+    minWidth: 360,
+    minHeight: 300,
+    frame: false,
+    alwaysOnTop: alwaysOnTop,
+    backgroundColor: '#00000000',
+    show: false,
+    hasShadow: true,
+    titleBarStyle: 'hidden',
+    roundedCorners: true,
+    icon: chosenIcon || undefined,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      webSecurity: true
+    }
+  });
+
+  notesWin.loadURL(`file://${__dirname}/notes-window.html`);
+
+  notesWin.once('ready-to-show', () => {
+    notesWin.show();
+  });
+
+  // Track position changes
+  notesWin.on('move', () => {
+    console.log('[main] notes window moved');
+  });
+
+  notesWin.on('resize', () => {
+    console.log('[main] notes window resized');
+  });
+
+  // Save position on close
+  notesWin.on('close', () => {
+    try {
+      const bounds = notesWin.getBounds();
+      const stateFile = path.join(app.getPath('userData'), 'notes-window-state.json');
+      fs.writeFileSync(stateFile, JSON.stringify(bounds));
+      console.log('[main] notes window state saved:', bounds);
+    } catch (e) {
+      console.warn('[main] failed to save notes window state', e);
+    }
+  });
+
+  notesWin.on('closed', () => {
+    notesWin = null;
+  });
+
+  return notesWin;
+}
+
+// IPC to open/close notes window
+ipcMain.handle('notes:open', () => {
+  return createNotesWindow() ? true : false;
+});
+
+ipcMain.handle('notes:close', () => {
+  if (notesWin) {
+    notesWin.close();
+    notesWin = null;
+    return true;
+  }
+  return false;
+});
+
+// IPC to get notes window bounds
+ipcMain.handle('notes:getWindowBounds', () => {
+  if (notesWin && !notesWin.isDestroyed()) {
+    return notesWin.getBounds();
+  }
+  return null;
+});
+
+// IPC to set notes window bounds
+ipcMain.handle('notes:setWindowBounds', (_, bounds) => {
+  if (notesWin && !notesWin.isDestroyed() && bounds) {
+    if (bounds.x !== undefined && bounds.y !== undefined) {
+      notesWin.setPosition(bounds.x, bounds.y);
+    }
+    if (bounds.width !== undefined && bounds.height !== undefined) {
+      notesWin.setSize(bounds.width, bounds.height);
+    }
+    return true;
+  }
+  return false;
+});
+
+// IPC to set alwaysOnTop for notes window
+ipcMain.handle('notes:setAlwaysOnTop', (_, on) => {
+  if (notesWin && !notesWin.isDestroyed()) {
+    notesWin.setAlwaysOnTop(!!on, 'screen-saver');
+    console.log('[main] notes window alwaysOnTop set to:', !!on);
+    return true;
+  }
+  return false;
+});
+
+// IPC listener for settings changes from main renderer - broadcast to notes window
+ipcMain.on('settings:changed', (event, patch) => {
+  console.log('[main] settings changed:', patch);
+  // Update cached settings
+  currentSettings = { ...currentSettings, ...patch };
+  console.log('[main] updated settings cache:', currentSettings);
+  
+  // Apply alwaysOnTop setting to main window if it changed
+  if (patch.hasOwnProperty('alwaysOnTop')) {
+    win.setAlwaysOnTop(!!patch.alwaysOnTop, 'screen-saver');
+    console.log('[main] main window alwaysOnTop set to:', !!patch.alwaysOnTop);
+  }
+  
+  if (notesWin && !notesWin.isDestroyed()) {
+    try {
+      notesWin.webContents.send('settings:changed', patch);
+      console.log('[main] broadcasted settings to notes window:', patch);
+      
+      // Apply alwaysOnTop to notes window as well
+      if (patch.hasOwnProperty('alwaysOnTop')) {
+        notesWin.setAlwaysOnTop(!!patch.alwaysOnTop, 'screen-saver');
+        console.log('[main] notes window alwaysOnTop set to:', !!patch.alwaysOnTop);
+      }
+    } catch (e) {
+      console.warn('[main] failed to broadcast settings to notes window', e);
+    }
+  }
+});
+
+// IPC handler to get current settings (called by notes window on boot)
+ipcMain.handle('settings:get', () => {
+  console.log('[main] settings:get called, returning:', currentSettings);
+  return currentSettings;
+});
+
 
 app.whenReady().then(async () => {
   createWindow();

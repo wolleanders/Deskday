@@ -53,15 +53,21 @@ export async function loadNote(dateISO) {
       }
     }
     
-    // Then try cloud if available
-    if (cloudApi) {
-      const data = await cloudApi.loadTimetable(`notes-${dateISO}`);
-      if (data && data.text) {
-        currentNote = { date: dateISO, text: data.text };
-        // Cache to localStorage
-        localStorage.setItem(localKey, JSON.stringify({ text: data.text }));
-        console.log(`[${MOD}] loaded note from cloud for ${dateISO}`);
-        return currentNote;
+    // Then try cloud if available AND user is logged in
+    const user = window.auth?.getCurrentUser?.();
+    if (cloudApi && user) {
+      try {
+        const data = await cloudApi.loadTimetable(`notes-${dateISO}`);
+        if (data && data.text) {
+          currentNote = { date: dateISO, text: data.text };
+          // Cache to localStorage
+          localStorage.setItem(localKey, JSON.stringify({ text: data.text }));
+          console.log(`[${MOD}] loaded note from cloud for ${dateISO}`);
+          return currentNote;
+        }
+      } catch (e) {
+        // Cloud load failed (permissions error during logout, etc), fall through to empty note
+        // Silently ignore - expected during logout or offline
       }
     }
     
@@ -125,17 +131,56 @@ export async function getTodayNote() {
 // ========== GET ALL NOTES (Archive) ==========
 export async function getAllNotes() {
   try {
-    if (!cloudApi) throw new Error('Cloud API not ready');
+    const notes = [];
     
-    // This is a simplified approach - in production you'd query by prefix
-    // For now, we'll need to load notes manually or use Firestore query
-    // Return empty array - caller will build list from UI state
-    console.log(`[${MOD}] getAllNotes - archive list will be built from stored keys`);
-    return [];
+    // Scan localStorage for all notes (last 15 days + any older ones)
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(NOTES_STORAGE_PREFIX)) {
+        try {
+          const data = JSON.parse(localStorage.getItem(key));
+          if (data && data.text && data.text.trim()) {
+            // Extract date from key: 'deskday.notes.v1.YYYY-MM-DD'
+            const date = key.substring(NOTES_STORAGE_PREFIX.length + 1);
+            notes.push({ date, text: data.text });
+          }
+        } catch (e) {
+          // Skip malformed entries
+        }
+      }
+    }
+    
+    // Sort by date descending (newest first)
+    notes.sort((a, b) => b.date.localeCompare(a.date));
+    
+    console.log(`[${MOD}] getAllNotes: found ${notes.length} archived notes`);
+    return notes;
   } catch (e) {
     console.error(`[${MOD}] getAllNotes failed:`, e);
     return [];
   }
+}
+
+// ========== GET NOTES FOR LAST N DAYS ==========
+export async function getNotesForLastDays(days = 15) {
+  const allNotes = await getAllNotes();
+  const result = [];
+  const today = new Date();
+  
+  for (let i = 0; i < days; i++) {
+    const date = new Date(today);
+    date.setDate(date.getDate() - i);
+    const dateISO = date.toISOString().split('T')[0];
+    
+    const note = allNotes.find(n => n.date === dateISO);
+    result.push({
+      date: dateISO,
+      text: note?.text || '',
+      hasContent: !!note?.text
+    });
+  }
+  
+  return result;
 }
 
 // ========== GET CURRENT NOTE ==========
@@ -161,4 +206,4 @@ export async function bootNotes() {
   }
 }
 
-console.log(`[load] ${MOD} ready (exports: initCloudApi, loadNote, saveNoteDebounced, getTodayNote, getAllNotes, getCurrentNote, setCurrentNote, bootNotes)`);
+console.log(`[load] ${MOD} ready (exports: initCloudApi, loadNote, saveNoteDebounced, getTodayNote, getAllNotes, getNotesForLastDays, getCurrentNote, setCurrentNote, bootNotes)`);
