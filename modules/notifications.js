@@ -70,7 +70,7 @@ function checkAndNotify() {
 }
 
 function showNotification(hour, text) {
-  const title = `Hour ${String(hour).padStart(2, '0')}`;
+  const title = `${String(hour).padStart(2, '0')}:00`;
   const summary = text.length > 80 ? text.substring(0, 77) + '...' : text;
 
   try {
