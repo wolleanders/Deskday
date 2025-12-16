@@ -1,6 +1,6 @@
 /* renderer.js (cleaned + defensive auth wiring so UI works reliably) */
 
-import { bootSettings, getSettings, applyHourFormat, toggleTheme } from './modules/settings.js';
+import { bootSettings, getSettings, applyHourFormat, toggleTheme, applyNotifications } from './modules/settings.js';
 import { openSet, closeSet } from './modules/setOverlay.js';
 import { bootLoginMode } from './modules/loginMode.js';
 import { loadHours, saveHours, exportTimetable, importTimetable, saveEntries, loadEntries, importTimetableNewestWins, shouldApplyRemote, touchEntryUpdatedAt } from "./modules/storage.js";
@@ -10,6 +10,7 @@ import { startOnboarding, finishOnboarding, isOnboardingActive, handleAuthChange
 import { installResetShortcut } from './modules/resetHelper.js';
 import { initCloudApi, bootNotes } from './modules/notes.js';
 import { initNotesUI } from './modules/notesUI.js';
+import { initNotifications, stopNotifications } from './modules/notifications.js';
 // auth-state kept separate; may be undefined in some runs
 import * as AuthState from './modules/authState.js';
 
@@ -748,6 +749,9 @@ function setCloudState(isCloud, user = null) {
 // Expose for other modules to call reliably (avoid timing/order issues)
 try { window.setCloudState = setCloudState; } catch(e) {}
 
+// Export notifications functions to window
+try { window.initNotifications = initNotifications; window.stopNotifications = stopNotifications; } catch(e) {}
+
 // ---- persistent cloud override: append last CSS + helper to set inline important ----
 (function installPersistentCloudOverride() {
   const ID = 'deskday-cloud-latefix';
@@ -1482,31 +1486,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const setCloseEl = document.getElementById('setClose');
     if (setCloseEl) {
         setCloseEl.addEventListener('click', (e) => { e.stopPropagation(); try { closeSet(); } catch(e){ document.getElementById('setOverlay')?.classList.add('hidden'); } });
-    }
-
-    // Check for Updates button
-    const setCheckUpdates = document.getElementById('setCheckUpdates');
-    if (setCheckUpdates) {
-        setCheckUpdates.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            const originalText = setCheckUpdates.textContent;
-            setCheckUpdates.textContent = 'Checking...';
-            setCheckUpdates.disabled = true;
-            try {
-                const result = await window.appApi?.checkForUpdates?.();
-                console.log('[ui] checkForUpdates result:', result);
-                if (result?.updateAvailable) {
-                    setCheckUpdates.textContent = 'Update Available!';
-                } else {
-                    setCheckUpdates.textContent = 'Up to date';
-                    setTimeout(() => { setCheckUpdates.textContent = originalText; setCheckUpdates.disabled = false; }, 2000);
-                }
-            } catch (err) {
-                console.error('[ui] checkForUpdates failed:', err);
-                setCheckUpdates.textContent = 'Check failed';
-                setTimeout(() => { setCheckUpdates.textContent = originalText; setCheckUpdates.disabled = false; }, 2000);
-            }
-        });
     }
 
     // optMin (BEIBEHALTEN)

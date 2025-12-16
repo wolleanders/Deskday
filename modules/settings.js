@@ -3,7 +3,7 @@ const MOD = 'settings.js';
 console.time(`[load] ${MOD}`);
 
 const KEY = 'tt.settings';
-const DEFAULTS = { theme: 'dark', hour12: false, autostart: false, alwaysOnTop: true };
+const DEFAULTS = { theme: 'dark', hour12: false, autostart: false, alwaysOnTop: true, notifications: true };
 
 /* -------- Persistence -------- */
 export function getSettings() {
@@ -18,6 +18,7 @@ export function getSettings() {
   s.hour12      = !!s.hour12;
   s.autostart   = !!s.autostart;
   s.alwaysOnTop = s.alwaysOnTop !== false;
+  s.notifications = s.notifications !== false;
   return s;
 }
 
@@ -125,6 +126,27 @@ export async function applyAOT(on) {
   return target;
 }
 
+export function applyNotifications(on) {
+  const target = !!on;
+  try {
+    if (target) {
+      // Enable notifications
+      if (window.initNotifications && typeof window.initNotifications === 'function') {
+        window.initNotifications();
+      }
+    } else {
+      // Disable notifications
+      if (window.stopNotifications && typeof window.stopNotifications === 'function') {
+        window.stopNotifications();
+      }
+    }
+  } catch (e) {
+    console.warn('[settings] applyNotifications failed:', e);
+  }
+  setSettings({ notifications: target });
+  return target;
+}
+
 
 /* -------- Boot -------- */
 export async function bootSettings({ labelSelector = '.hour .label' } = {}) {
@@ -142,11 +164,12 @@ export async function bootSettings({ labelSelector = '.hour .label' } = {}) {
   }
 
   await applyAOT(s.alwaysOnTop);
+  applyNotifications(s.notifications);
   console.log('[settings.js] boot complete ✅');
 }
 
 /* Rückwärtskompatibler Alias, falls irgendwo noch verwendet */
 export const bootApply = bootSettings;
 
-console.log(`[load] ${MOD} ready (exports: getSettings,setSettings,applyTheme,setTheme,toggleTheme,applyHourFormat,applyAutostart,applyAOT,bootSettings)`);
+console.log(`[load] ${MOD} ready (exports: getSettings,setSettings,applyTheme,setTheme,toggleTheme,applyHourFormat,applyAutostart,applyAOT,applyNotifications,bootSettings)`);
 console.timeEnd(`[load] ${MOD}`);

@@ -747,7 +747,7 @@ html[data-theme="light"] .set {
 .set-header-buttons {
   display: flex;
   gap: 8px;
-  align-items: center;
+  align-items: flex-start;
 }
 
 .set-title{ 
@@ -760,20 +760,27 @@ html[data-theme="light"] .set {
 }
 
 .set-close {
-  display: inline-grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  min-width: 40px;
+  padding: 0;
+  margin: 0;
   border-radius: 8px;
   background: transparent;
   border: none;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 20px;
+  line-height: 1;
   cursor: pointer;
   z-index: 10001;
   -webkit-app-region: no-drag;
   transition: color 0.18s ease;
   pointer-events: auto;
+  flex-shrink: 0;
 }
 
 .set-close:hover { 
@@ -997,34 +1004,41 @@ html[data-theme="light"] .set-btn {
 
 /* close: slightly left of the cloud, square button */
 .set-card #setClose {
-  position: absolute;
-  right: 10px;
-  width: 30px;
-  height: 30px;
-  line-height: 30px;
-  display: grid;
-  place-items: center;
+  position: absolute !important;
+  right: 10px !important;
+  top: 20px !important;
+  width: 40px !important;
+  height: 40px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   border-radius: 8px;
   background: none;
   color: var(--muted);
-  font-size: 14px !important;
+  font-size: 24px !important;
   padding: 0 !important;
+  margin: 0 !important;
+  line-height: 1 !important;
   border: none !important;
   cursor: pointer !important;
-  top: 10px;
+  vertical-align: middle;
+  flex-shrink: 0;
+  touch-action: manipulation;
+  z-index: 100 !important;
+  pointer-events: auto !important;
 }
 /* cloud: top-right (small, subtle) */
 .set-card #cloudStatus,
 .set-card > .cloud-indicator {
   position: absolute;
-  right: 40px;
+  right: 52px;
   font-size: 14px;
   opacity: 0.5;
   color: var(--muted);
   background: transparent;
   padding: 4px 6px;
   margin: 0px;
-  top: 13px;
+  top: 25px;
   pointer-events: none; /* purely decorative - prevents accidental clicks */
 }
 

@@ -3,7 +3,7 @@ const MOD = 'setOverlay.js';
 console.time(`[load] ${MOD}`);
 
 import {
-  getSettings, setTheme, applyHourFormat, applyAutostart, applyAOT
+  getSettings, setTheme, applyHourFormat, applyAutostart, applyAOT, applyNotifications
 } from './settings.js';
 
 function $(id) { return document.getElementById(id); }
@@ -55,8 +55,12 @@ async function syncCheckboxes({ labelSelector = '.hour .label' } = {}) {
   const aot = $('setAOT');
   if (aot) aot.checked = (s.alwaysOnTop !== false);
 
+  // Notifications checkbox
+  const notif = $('setNotif');
+  if (notif) notif.checked = (s.notifications !== false);
+
   ensureHourData(labelSelector);
-  console.log(`[${MOD}] settings synced`, { theme: s.theme, hour12: !!s.hour12, aot: aot?.checked, autostart: auto?.checked });
+  console.log(`[${MOD}] settings synced`, { theme: s.theme, hour12: !!s.hour12, aot: aot?.checked, autostart: auto?.checked, notifications: notif?.checked });
 }
 
 /** Listener (nur einmal verkabeln) */
@@ -103,6 +107,12 @@ function wireEvents({ labelSelector = '.hour .label' } = {}) {
   $('setAOT')?.addEventListener('change', async () => {
     const ok = await applyAOT($('setAOT').checked);
     $('setAOT').checked = ok;
+  });
+
+  // Notifications checkbox
+  $('setNotif')?.addEventListener('change', () => {
+    const ok = applyNotifications($('setNotif').checked);
+    $('setNotif').checked = ok;
   });
 
   // Login/Logout (optional – nur UI)
