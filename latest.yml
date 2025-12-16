@@ -1,0 +1,8 @@
+version: 0.7.2
+files:
+  - url: https://github.com/wolleanders/Deskday/releases/download/v0.7.2/Deskday.Setup.0.7.2.exe
+    sha512: 8oAw6MHh6qviBHw+4b75XFzaxlqjdrH2IIEP9p65mDEjycOQFxsgI0aJNVkLnophzIlRyTyU/bI4ZALL0n4xfg==
+    size: 108973831
+path: https://github.com/wolleanders/Deskday/releases/download/v0.7.2/Deskday.Setup.0.7.2.exe
+sha512: 8oAw6MHh6qviBHw+4b75XFzaxlqjdrH2IIEP9p65mDEjycOQFxsgI0aJNVkLnophzIlRyTyU/bI4ZALL0n4xfg==
+releaseDate: '2025-12-16T09:03:31.354Z'
