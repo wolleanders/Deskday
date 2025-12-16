@@ -627,26 +627,26 @@ app.whenReady().then(async () => {
   if (process.platform === 'darwin') app.dock.hide(); // optional
 
   // Configure auto-updater with GitHub feed URL
-  // Using raw.githubusercontent.com to bypass CDN issues with release assets
+  // Use GitHub releases API directly - more reliable than raw.githubusercontent.com
   try {
-    const feedUrl = 'https://raw.githubusercontent.com/wolleanders/Deskday/main/latest.yml';
     autoUpdater.setFeedURL({
-      provider: 'generic',
-      url: feedUrl
+      provider: 'github',
+      owner: 'wolleanders',
+      repo: 'Deskday'
     });
-    console.log('[main] auto-updater feed configured:', feedUrl);
+    console.log('[main] auto-updater configured to use GitHub releases API');
   } catch (e) {
-    console.warn('[main] failed to set feed URL:', e.message);
-    // Fallback to standard GitHub provider
+    console.warn('[main] failed to set GitHub feed URL:', e.message);
+    // Fallback to raw content if needed
     try {
+      const feedUrl = 'https://raw.githubusercontent.com/wolleanders/Deskday/main/latest.yml';
       autoUpdater.setFeedURL({
-        provider: 'github',
-        owner: 'wolleanders',
-        repo: 'Deskday'
+        provider: 'generic',
+        url: feedUrl
       });
-      console.log('[main] fallback: using standard GitHub provider');
+      console.log('[main] fallback: using raw.githubusercontent.com');
     } catch (e2) {
-      console.warn('[main] fallback also failed:', e2.message);
+      console.warn('[main] both feed URL methods failed:', e2.message);
     }
   }
 
