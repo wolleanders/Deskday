@@ -907,6 +907,7 @@ html[data-theme="light"] .set-radio:hover {
 .set-footer-top {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
 }
 
 .set-btn{ 
@@ -1204,6 +1205,16 @@ html[data-theme="light"] .set-btn {
   letter-spacing: 0.05em;
   margin: 0;
   opacity: 0.8;
+}
+
+.loading-quote {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: italic;
+  margin: 12px 0 0 0;
+  opacity: 0.7;
+  max-width: 300px;
+  text-align: center;
 }
 
 /* =========================

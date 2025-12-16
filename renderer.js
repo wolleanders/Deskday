@@ -1484,6 +1484,31 @@ document.addEventListener('DOMContentLoaded', async () => {
         setCloseEl.addEventListener('click', (e) => { e.stopPropagation(); try { closeSet(); } catch(e){ document.getElementById('setOverlay')?.classList.add('hidden'); } });
     }
 
+    // Check for Updates button
+    const setCheckUpdates = document.getElementById('setCheckUpdates');
+    if (setCheckUpdates) {
+        setCheckUpdates.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const originalText = setCheckUpdates.textContent;
+            setCheckUpdates.textContent = 'Checking...';
+            setCheckUpdates.disabled = true;
+            try {
+                const result = await window.appApi?.checkForUpdates?.();
+                console.log('[ui] checkForUpdates result:', result);
+                if (result?.updateAvailable) {
+                    setCheckUpdates.textContent = 'Update Available!';
+                } else {
+                    setCheckUpdates.textContent = 'Up to date';
+                    setTimeout(() => { setCheckUpdates.textContent = originalText; setCheckUpdates.disabled = false; }, 2000);
+                }
+            } catch (err) {
+                console.error('[ui] checkForUpdates failed:', err);
+                setCheckUpdates.textContent = 'Check failed';
+                setTimeout(() => { setCheckUpdates.textContent = originalText; setCheckUpdates.disabled = false; }, 2000);
+            }
+        });
+    }
+
     // optMin (BEIBEHALTEN)
     if (optMin) optMin.addEventListener('click', () => { window.appApi?.minimizeToTray(); });
 
