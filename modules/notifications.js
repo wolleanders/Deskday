@@ -18,6 +18,21 @@ export function stopNotifications() {
   }
 }
 
+export function testNotification() {
+  const now = new Date();
+  const currentHour = now.getHours();
+  const hourKey = String(currentHour).padStart(2, '0');
+  const entries = JSON.parse(localStorage.getItem('deskday.entries.v1') || '{}');
+  const hourText = entries[hourKey]?.trim();
+
+  if (hourText) {
+    showNotification(currentHour, hourText);
+    console.log(`[notifications] test notification sent for hour ${hourKey}`);
+  } else {
+    console.warn(`[notifications] no entry for current hour ${hourKey}, cannot test`);
+  }
+}
+
 function scheduleHourlyNotification() {
   // Fire at the top of each hour
   const now = new Date();
@@ -87,5 +102,5 @@ function showNotification(hour, text) {
   }
 }
 
-console.log(`[load] ${MOD} ready (exports: initNotifications,stopNotifications)`);
+console.log(`[load] ${MOD} ready (exports: initNotifications,stopNotifications,testNotification)`);
 console.timeEnd(`[load] ${MOD}`);

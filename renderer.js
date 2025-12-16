@@ -10,7 +10,7 @@ import { startOnboarding, finishOnboarding, isOnboardingActive, handleAuthChange
 import { installResetShortcut } from './modules/resetHelper.js';
 import { initCloudApi, bootNotes } from './modules/notes.js';
 import { initNotesUI } from './modules/notesUI.js';
-import { initNotifications, stopNotifications } from './modules/notifications.js';
+import { initNotifications, stopNotifications, testNotification } from './modules/notifications.js';
 // auth-state kept separate; may be undefined in some runs
 import * as AuthState from './modules/authState.js';
 
@@ -750,7 +750,7 @@ function setCloudState(isCloud, user = null) {
 try { window.setCloudState = setCloudState; } catch(e) {}
 
 // Export notifications functions to window
-try { window.initNotifications = initNotifications; window.stopNotifications = stopNotifications; } catch(e) {}
+try { window.initNotifications = initNotifications; window.stopNotifications = stopNotifications; window.testNotification = testNotification; } catch(e) {}
 
 // ---- persistent cloud override: append last CSS + helper to set inline important ----
 (function installPersistentCloudOverride() {
