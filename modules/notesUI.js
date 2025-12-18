@@ -6,6 +6,7 @@
  */
 
 import { initArchiveUI, openArchive } from './notesArchiveUI.js';
+import { getSettings } from './settings.js';
 
 const MOD = 'notesUI.js';
 let isWindowOpen = false;
@@ -44,6 +45,9 @@ export async function openNotesWindow() {
   console.log(`[${MOD}] opening notes window`);
   isWindowOpen = true;
   
+  // Sync theme to notes window before opening
+  await syncThemeToNotesWindow();
+  
   if (window.notesWindow) {
     await window.notesWindow.open();
   }
@@ -72,6 +76,21 @@ export async function closeNotesWindow() {
   if (addNoteBtn) {
     addNoteBtn.classList.remove('active');
     addNoteBtn.textContent = '+';
+  }
+}
+
+// ========== THEME SYNC ==========
+async function syncThemeToNotesWindow() {
+  try {
+    const settings = getSettings();
+    const theme = (settings.theme || 'dark').toLowerCase();
+    
+    if (window.__deskday_platform?.ipcRenderer) {
+      await window.__deskday_platform.ipcRenderer.invoke('notes:setTheme', { theme });
+      console.log(`[${MOD}] synced theme to notes window: ${theme}`);
+    }
+  } catch (e) {
+    console.warn(`[${MOD}] failed to sync theme to notes window`, e);
   }
 }
 

@@ -10,16 +10,22 @@ let currentStep = null;
  * Called when user successfully logs in during the login step
  */
 export async function handleAuthChangeInOnboarding(user) {
-  if (!isFirstStartup() || !user) return;
+  if (!isFirstStartup() || !user) {
+    console.log('[onboardingUI] handleAuthChangeInOnboarding skipped - isFirstStartup:', isFirstStartup(), 'user:', !!user);
+    return;
+  }
   
   const step = getOnboardingStep();
-  console.log('[onboardingUI] auth change detected, current step:', step);
+  console.log('[onboardingUI] auth change detected, current step:', step, 'user:', user.email);
   
   // If we're on the login step and user logged in, advance to theme
   if (step === 'login') {
     console.log('[onboardingUI] user logged in during login step, advancing to theme');
     nextOnboardingStep({ loginChoice: 'google' });
-    await showStep('theme');
+    const shown = await showStep('theme');
+    console.log('[onboardingUI] theme step shown:', shown);
+  } else {
+    console.log('[onboardingUI] not on login step, skipping auto-advance');
   }
 }
 

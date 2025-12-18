@@ -39,6 +39,28 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <link rel="stylesheet" href="style.css" />
   <title>Deskday Proto</title>
+  <script>
+    // Apply theme immediately before any rendering
+    (function earlyTheme() {
+      try {
+        let theme = localStorage.getItem('tt.settings');
+        if (theme) {
+          try {
+            theme = JSON.parse(theme).theme || 'dark';
+          } catch {
+            theme = 'dark';
+          }
+        } else {
+          theme = 'dark';
+        }
+        if (theme === 'light') {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      } catch (e) {
+        // noop
+      }
+    })();
+  </script>
 </head>
 <!-- ONBOARDING OVERLAYS -->
 <!-- Step 1: Login Choice -->

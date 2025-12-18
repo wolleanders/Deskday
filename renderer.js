@@ -1224,13 +1224,17 @@ function installAuthMutationObserver() {
 
   // subscribe to onChange (keep UI in sync)
   if (typeof window.auth.onChange === 'function') {
-    window.auth.onChange((u) => {
+    window.auth.onChange(async (u) => {
       console.log('[auth] onChange ->', u);
       console.log('[auth] isBooting:', isBooting);
       
       // Handle onboarding flow during login
       if (u && isFirstBoot) {
-        try { handleAuthChangeInOnboarding(u); } catch (e) { console.warn('[onboardingUI] auth change handler failed', e); }
+        try { 
+          await handleAuthChangeInOnboarding(u); 
+        } catch (e) { 
+          console.warn('[onboardingUI] auth change handler failed', e); 
+        }
       }
       
       if (u) {

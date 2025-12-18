@@ -585,6 +585,29 @@ ipcMain.handle('notes:setAlwaysOnTop', (_, on) => {
   return false;
 });
 
+ipcMain.handle('notes:setTheme', (_, { theme }) => {
+  if (notesWin && !notesWin.isDestroyed()) {
+    try {
+      const themeVal = (theme || 'dark').toLowerCase();
+      notesWin.webContents.executeJavaScript(`
+        const html = document.documentElement;
+        if ('${themeVal}' === 'light') {
+          html.setAttribute('data-theme', 'light');
+        } else {
+          html.removeAttribute('data-theme');
+        }
+        console.log('[notes-window] theme set to: ${themeVal}');
+      `);
+      console.log('[main] notes window theme set to:', theme);
+      return true;
+    } catch (e) {
+      console.warn('[main] failed to set notes window theme:', e);
+      return false;
+    }
+  }
+  return false;
+});
+
 // IPC listener for settings changes from main renderer - broadcast to notes window
 ipcMain.on('settings:changed', (event, patch) => {
   console.log('[main] settings changed:', patch);
