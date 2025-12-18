@@ -667,24 +667,6 @@ body.editor-mode .colEmp-btn{ display:grid !important; }
 /* Edit-Mode Visibility Override */
 body.editor-mode .tei-btn,
 body.editor-mode .st-btn,
-body.editor-mode .colEmp-btn {
-  display: grid !important;
-}
-
-/* Failsafe: Wenn Editor AUS ist, zeig Editor-UI nicht */
-body:not(.editor-mode) #teiBtn,
-body:not(.editor-mode) #stBtn,
-body:not(.editor-mode) #opt-collapse-empties,
-body:not(.editor-mode) .chev {
-  display: none !important;
-}
-
-/* Editor-Modus: sichtbar (überschreibt .hidden nur, wenn du .hidden NICHT per JS setzt) */
-body.editor-mode .tei-btn,
-body.editor-mode .st-btn,
-body.editor-mode .colEmp-btn { display: grid !important; }
-
-
 /* Settings Overlay */
 .set{
   position: fixed; 

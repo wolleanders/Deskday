@@ -219,12 +219,6 @@ function setHourText(hour, text) {
     saveEntries(model); 
     touchEntryUpdatedAt(key); // Track that this entry was modified locally
   } catch(e){ console.warn('saveEntries failed', e); }
-  
-  // Schedule cloud save only if no editor is open
-  const hasOpenEditor = !!timetable.querySelector('.txt-input[style*="display: block"]');
-  if (!hasOpenEditor) {
-    try { scheduleCloudSave(); } catch(e){ /* noop */ }
-  }
 }
 
 /* ---- DOM References ---- */
@@ -240,16 +234,12 @@ dateLabel && (dateLabel.textContent = `${now.getDate()}.${String(now.getMonth() 
 
 const optBtn = document.getElementById('optionsBtn');
 const optMenu = document.getElementById('optionsMenu');
-const optTE = document.getElementById('opt-te');
+const optSEE = document.getElementById('opt-see');
+const optCollapse = document.getElementById('opt-collapse');
 
 // settings button (support both id variants)
 const optSet = document.getElementById('optSet') || document.getElementById('opt-settings');
 const optMin = document.getElementById('opt-min');
-
-// hidden till TTE
-const teiBtn = document.getElementById('teiBtn');
-const stBtn = document.getElementById('stBtn');
-const colEmpBtn = document.getElementById('colEmpBtn');
 
 // SEE Overlay Elemente
 const seeOverlay = document.getElementById('seeOverlay');
@@ -530,16 +520,26 @@ function recordActivity() {
 window.addEventListener('wheel', (e) => { if (minOffset === 0) return; recordActivity(); vel -= e.deltaY * gain; }, { passive: true });
 
 let dragging = false, lastY = 0;
+let cloudSaveTimer = null; // Timer for debounced cloud save after 8s inactivity
 viewport?.addEventListener('mousedown', (e) => { recordActivity(); dragging = true; lastY = e.clientY; });
 
 (function loop() { offset += vel; vel *= (1 - friction); if (offset > maxOffset) { offset = maxOffset; vel = 0; } if (offset < minOffset) { offset = minOffset; vel = 0; } timetable && (timetable.style.transform = `translateY(${offset}px)`); requestAnimationFrame(loop); })();
 
 /* ----- Editor inputs ----- */
+function cancelScheduledCloudSave() {
+  if (cloudSaveTimer) {
+    clearTimeout(cloudSaveTimer);
+    cloudSaveTimer = null;
+  }
+}
+
 function openHourEditor(hour){
   const items = timetable.children[hour - startHour].querySelector('.items');
   const view  = items.querySelector('.txt');
   const edit  = items.querySelector('.txt-input');
 
+  // Cancel any pending cloud save when editor opens
+  cancelScheduledCloudSave();
   closeAnyHourEditor();
 
   let text = getHourText(hour);
@@ -577,20 +577,28 @@ function closeHourEditor(hour, commit = true) {
   requestAnimationFrame(() => {
     applyCollapsedState();
   });
+  
+  // Schedule cloud save after 8 seconds of inactivity (no editors open)
+  if (commit) {
+    requestAnimationFrame(() => {
+      // Check if any editor is now open
+      const hasOpenEditor = !!timetable.querySelector('.txt-input[style*="display: block"]');
+      if (!hasOpenEditor) {
+        // Start the 8-second timer
+        cancelScheduledCloudSave();
+        cloudSaveTimer = setTimeout(() => {
+          try { scheduleCloudSave(); } catch(e){ /* noop */ }
+          cloudSaveTimer = null;
+        }, 8000);
+      }
+    });
+  }
 }
 function closeAnyHourEditor(commit=true){
   const open = timetable.querySelectorAll('.txt-input');
   open.forEach(ta=>{
     if (ta.style.display === 'block'){
       closeHourEditor(parseInt(ta.dataset.hour,10), commit);
-    }
-  });
-  
-  // After closing all editors, schedule cloud save if no editors remain
-  requestAnimationFrame(() => {
-    const hasOpenEditor = !!timetable.querySelector('.txt-input[style*="display: block"]');
-    if (!hasOpenEditor && commit) {
-      try { scheduleCloudSave(); } catch(e){ /* noop */ }
     }
   });
 }
@@ -1509,13 +1517,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (optMin) optMin.addEventListener('click', () => { window.appApi?.minimizeToTray(); });
 
     // start/end overlay button
-    if (stBtn){
-        stBtn.addEventListener('click', () => { closeAnyHourEditor(true); openSEE({start:startHour, end:endHour}); });
+    if (optSEE){
+        optSEE.addEventListener('click', () => { closeAnyHourEditor(true); openSEE({start:startHour, end:endHour}); });
     }
 
     // collapse empty (BEIBEHALTEN)
-    if (colEmpBtn){
-        colEmpBtn.addEventListener('click', () => {
+    if (optCollapse){
+        optCollapse.addEventListener('click', () => {
             collapseState.auto = !collapseState.auto;
             saveCollapseState();
             updateAllSummaries();
@@ -1523,9 +1531,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             recalcLayout();
             updateNowLine();
             snapToCurrentHour({ smooth:true });
-            colEmpBtn.setAttribute('aria-expanded', String(collapseState.auto));
-            colEmpBtn.classList.toggle('active', collapseState.auto);
-            colEmpBtn.setAttribute('aria-pressed', String(collapseState.auto));
+            optCollapse.setAttribute('aria-expanded', String(collapseState.auto));
+            optCollapse.classList.toggle('active', collapseState.auto);
+            optCollapse.setAttribute('aria-pressed', String(collapseState.auto));
         });
     }
 

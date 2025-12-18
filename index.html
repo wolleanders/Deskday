@@ -237,29 +237,6 @@
           aria-pressed="true"
           title="Exit Editor">
     </button>
-<!-- hidden TTE Button -SET TIMETABLE -->
-    <button
-          id="stBtn"
-          class="st-btn hidden"
-          type="button"
-          aria-label="setTime Editor"
-          aria-pressed="false"
-          title="SetTime Editor">
-            <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
-    <use href="#i-bed"></use>
-  </svg>
-    </button>
-  <!-- hidden Collapse all Empty -->
-<button
-  id="colEmpBtn"
-  class="colEmp-btn hidden"
-  type="button"
-  aria-label="Zeilen einklappen/ausklappen"
-  aria-expanded="false"              
-  aria-controls="collapseTarget"
-  title="Collapse/Expand">
-  <svg width="20" height="20"><use href="#i-chevron"></use></svg>
-</button>
 <div class="title">
     <!-- Mitte: Day -->
      <div class="date-display">
@@ -282,14 +259,25 @@
 </button>
 
     <div id="optionsMenu" class="options-menu hidden">
-      <button id="opt-te"
+      <button id="opt-see"
           class="opt-item"
           data-om-item
           type="button"
-          aria-label="Table Editor"
-          aria-pressed="false"
-          title="Table Editor">
-      ✎
+          aria-label="Set wake and sleep time"
+          title="Set wake and sleep time">
+        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+          <use href="#i-bed"></use>
+        </svg>
+      </button>
+      <button id="opt-collapse"
+          class="opt-item"
+          data-om-item
+          type="button"
+          aria-label="Collapse/Expand empty hours"
+          title="Collapse/Expand empty hours">
+        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+          <use href="#i-chevron"></use>
+        </svg>
       </button>
         <button
         class="opt-item"
