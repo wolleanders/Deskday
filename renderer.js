@@ -115,27 +115,35 @@ let isBooting = true; // Flag to track if we're in boot phase
 let bootInitialized = false;
 let isFirstBoot = isFirstStartup(); // Check early, before any function runs
 
-let model = loadEntries();
+let allEntries = loadEntries(); // Full nested structure
 let currentDayIndex = new Date().getDay(); // 0=Sunday, 1=Monday, etc.
 let realTodayIndex = new Date().getDay(); // Track the actual current day for comparison
+let model = {}; // Will hold current day's entries
+
+const weekdays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
 // Migrate model to nested structure if needed (old flat structure → new nested)
-if (Object.keys(model).length > 0 && !['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].includes(Object.keys(model)[0])) {
+if (Object.keys(allEntries).length > 0 && !weekdays.includes(Object.keys(allEntries)[0])) {
   // Old structure detected - migrate to nested
-  const weekdays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-  const newModel = {};
-  weekdays.forEach(day => newModel[day] = {});
+  const newAllEntries = {};
+  weekdays.forEach(day => newAllEntries[day] = {});
   // Assume old entries are for today
-  newModel[weekdays[currentDayIndex]] = model;
-  model = newModel;
-  saveEntries(model);
+  newAllEntries[weekdays[currentDayIndex]] = allEntries;
+  allEntries = newAllEntries;
+  saveEntries(allEntries);
 }
 
-// Load entries for current day (or ensure nested structure)
-if (typeof model !== 'object' || model === null) {
-  model = {};
-  ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].forEach(day => model[day] = {});
-  saveEntries(model);
+// Ensure nested structure exists
+if (typeof allEntries !== 'object' || allEntries === null || Object.keys(allEntries).length === 0) {
+  allEntries = {};
+  weekdays.forEach(day => allEntries[day] = {});
+  saveEntries(allEntries);
+}
+
+// Load current day's entries
+function loadCurrentDayModel() {
+  const dayName = weekdays[currentDayIndex] || 'sunday';
+  model = allEntries[dayName] || {};
 }
 
 const COLLAPSE_KEY = 'deskday.collapse.v1';
@@ -230,29 +238,30 @@ function applyTheme(mode) {
    Storage helpers
    --------------------- */
 function hourKey(hour) { return String(hour).padStart(2, '0'); }
-function getHourText(hour) { const key = hourKey(hour); const dayEntry = model[weekdayName(currentDayIndex)] || {}; return dayEntry[key] || ""; }
+function getHourText(hour) { const key = hourKey(hour); return model[key] || ""; }
 function setHourText(hour, text) {
   const key = hourKey(hour);
   const trimmed = String(text || '').trim();
-  const dayEntry = model[weekdayName(currentDayIndex)] || {};
-  if (!trimmed) delete dayEntry[key];
-  else dayEntry[key] = trimmed;
-  model[weekdayName(currentDayIndex)] = dayEntry;
-  console.log('[Deskday] setHourText', hour, '→', JSON.stringify(dayEntry));
+  if (!trimmed) delete model[key];
+  else model[key] = trimmed;
+  console.log('[Deskday] setHourText', hour, '→', JSON.stringify(model));
+  // Update allEntries with current model
+  allEntries[weekdays[currentDayIndex]] = model;
   try { 
-    saveEntries(model); 
+    saveEntries(allEntries); 
     touchEntryUpdatedAt(key); // Track that this entry was modified locally
   } catch(e){ console.warn('saveEntries failed', e); }
 }
 
-function weekdayName(dayIndex) {
-  const names = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-  return names[dayIndex] || 'sunday';
-}
-
 function switchDay(dayIndex) {
   if (dayIndex === currentDayIndex) return; // Already on this day
+  // Save current day before switching
+  allEntries[weekdays[currentDayIndex]] = model;
+  saveEntries(allEntries);
+  
+  // Switch day
   currentDayIndex = dayIndex;
+  loadCurrentDayModel();
   updateDayDisplay();
   render();
   requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -1367,6 +1376,10 @@ function installAuthMutationObserver() {
  */
 async function initializeDataAndRender(user) {
     console.log('[boot] initializeDataAndRender started. User:', user ? user.uid : 'none');
+    
+    // Load current day's model
+    loadCurrentDayModel();
+    updateDayDisplay();
     
     // 1. Stunden laden (kein Default - nur wenn gespeichert)
     const hours = loadHours();
