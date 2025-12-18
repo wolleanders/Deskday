@@ -3,7 +3,7 @@
 import { bootSettings, getSettings, applyHourFormat, toggleTheme, applyNotifications } from './modules/settings.js';
 import { openSet, closeSet } from './modules/setOverlay.js';
 import { bootLoginMode } from './modules/loginMode.js';
-import { loadHours, saveHours, exportTimetable, importTimetable, saveEntries, loadEntries, importTimetableNewestWins, shouldApplyRemote, touchEntryUpdatedAt } from "./modules/storage.js";
+import { loadHours, saveHours, exportTimetable, importTimetable, saveEntries, loadEntries, importTimetableNewestWins, shouldApplyRemote, touchEntryUpdatedAt, loadEntriesForDay, saveEntriesForDay } from "./modules/storage.js";
 import { scheduleCloudSave } from "./modules/cloudSync.js";
 import { isFirstStartup, getOnboardingStep, completeOnboarding } from './modules/onboarding.js';
 import { startOnboarding, finishOnboarding, isOnboardingActive, handleAuthChangeInOnboarding } from './modules/onboardingUI.js';
@@ -116,6 +116,28 @@ let bootInitialized = false;
 let isFirstBoot = isFirstStartup(); // Check early, before any function runs
 
 let model = loadEntries();
+let currentDayIndex = new Date().getDay(); // 0=Sunday, 1=Monday, etc.
+let realTodayIndex = new Date().getDay(); // Track the actual current day for comparison
+
+// Migrate model to nested structure if needed (old flat structure → new nested)
+if (Object.keys(model).length > 0 && !['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].includes(Object.keys(model)[0])) {
+  // Old structure detected - migrate to nested
+  const weekdays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const newModel = {};
+  weekdays.forEach(day => newModel[day] = {});
+  // Assume old entries are for today
+  newModel[weekdays[currentDayIndex]] = model;
+  model = newModel;
+  saveEntries(model);
+}
+
+// Load entries for current day (or ensure nested structure)
+if (typeof model !== 'object' || model === null) {
+  model = {};
+  ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].forEach(day => model[day] = {});
+  saveEntries(model);
+}
+
 const COLLAPSE_KEY = 'deskday.collapse.v1';
 let collapseState = loadCollapseState();
 
@@ -208,17 +230,70 @@ function applyTheme(mode) {
    Storage helpers
    --------------------- */
 function hourKey(hour) { return String(hour).padStart(2, '0'); }
-function getHourText(hour) { const key = hourKey(hour); return model[key] || ""; }
+function getHourText(hour) { const key = hourKey(hour); const dayEntry = model[weekdayName(currentDayIndex)] || {}; return dayEntry[key] || ""; }
 function setHourText(hour, text) {
   const key = hourKey(hour);
   const trimmed = String(text || '').trim();
-  if (!trimmed) delete model[key];
-  else model[key] = trimmed;
-  console.log('[Deskday] setHourText', hour, '→', JSON.stringify(model));
+  const dayEntry = model[weekdayName(currentDayIndex)] || {};
+  if (!trimmed) delete dayEntry[key];
+  else dayEntry[key] = trimmed;
+  model[weekdayName(currentDayIndex)] = dayEntry;
+  console.log('[Deskday] setHourText', hour, '→', JSON.stringify(dayEntry));
   try { 
     saveEntries(model); 
     touchEntryUpdatedAt(key); // Track that this entry was modified locally
   } catch(e){ console.warn('saveEntries failed', e); }
+}
+
+function weekdayName(dayIndex) {
+  const names = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  return names[dayIndex] || 'sunday';
+}
+
+function switchDay(dayIndex) {
+  if (dayIndex === currentDayIndex) return; // Already on this day
+  currentDayIndex = dayIndex;
+  updateDayDisplay();
+  render();
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    updateBounds();
+    applyCollapsedState();
+    recalcLayout();
+    snapToCurrentHour();
+    ensureNowLine();
+    updateNowLine();
+  }));
+}
+
+function updateDayDisplay() {
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  
+  // Update label
+  dayLabel && (dayLabel.textContent = days[currentDayIndex]);
+  
+  // Update date label (only show date if today, otherwise show day name)
+  if (dateLabel) {
+    if (currentDayIndex === realTodayIndex) {
+      const now = new Date();
+      dateLabel.textContent = `${now.getDate()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getFullYear()).slice(-2)}`;
+    } else {
+      dateLabel.textContent = dayNames[currentDayIndex];
+    }
+  }
+  
+  // Update back button visibility
+  const backBtn = document.getElementById('backToToday');
+  if (backBtn) {
+    backBtn.classList.toggle('hidden', currentDayIndex === realTodayIndex);
+  }
+  
+  // Update dropdown state
+  const dayOptions = document.querySelectorAll('.day-option');
+  dayOptions.forEach(opt => {
+    const day = parseInt(opt.dataset.day, 10);
+    opt.classList.toggle('active', day === currentDayIndex);
+  });
 }
 
 /* ---- DOM References ---- */
@@ -1534,6 +1609,44 @@ document.addEventListener('DOMContentLoaded', async () => {
             optCollapse.setAttribute('aria-expanded', String(collapseState.auto));
             optCollapse.classList.toggle('active', collapseState.auto);
             optCollapse.setAttribute('aria-pressed', String(collapseState.auto));
+        });
+    }
+
+    // Day dropdown selector
+    const dayDisplay = document.getElementById('dayDisplay');
+    const dayDropdown = document.getElementById('dayDropdown');
+    const dayOptions = document.querySelectorAll('.day-option');
+    const backToTodayBtn = document.getElementById('backToToday');
+
+    if (dayDisplay && dayDropdown) {
+        dayDisplay.addEventListener('click', (e) => {
+            e.stopPropagation();
+            dayDropdown.classList.toggle('hidden');
+            dayDisplay.setAttribute('aria-expanded', String(!dayDropdown.classList.contains('hidden')));
+        });
+        
+        dayOptions.forEach(opt => {
+            opt.addEventListener('click', () => {
+                const dayIndex = parseInt(opt.dataset.day, 10);
+                switchDay(dayIndex);
+                dayDropdown.classList.add('hidden');
+                dayDisplay.setAttribute('aria-expanded', 'false');
+            });
+        });
+
+        // Close dropdown on outside click
+        document.addEventListener('click', (e) => {
+            if (!dayDisplay.contains(e.target) && !dayDropdown.contains(e.target)) {
+                dayDropdown.classList.add('hidden');
+                dayDisplay.setAttribute('aria-expanded', 'false');
+            }
+        });
+    }
+
+    // Back to today button
+    if (backToTodayBtn) {
+        backToTodayBtn.addEventListener('click', () => {
+            switchDay(realTodayIndex);
         });
     }
 

@@ -238,13 +238,26 @@
           title="Exit Editor">
     </button>
 <div class="title">
-    <!-- Mitte: Day -->
-     <div class="date-display">
-      <span id="dayLabel" class="day"></span><span class="slash">/</span>
-      <span id="dateLabel" class="date">Day</span>
+    <!-- Back button: visible only when not on current day -->
+    <button id="backToToday" class="back-to-today hidden" aria-label="Back to today" title="Back to today">
+      ←
+    </button>
+    <!-- Day selector: clickable to open dropdown -->
+    <div class="day-selector">
+      <button id="dayDisplay" class="day-display-btn" aria-haspopup="listbox" aria-expanded="false">
+        <span id="dayLabel" class="day"></span><span class="slash">/</span><span id="dateLabel" class="date">Day</span>
+      </button>
+      <!-- Weekday dropdown menu -->
+      <div id="dayDropdown" class="day-dropdown hidden" role="listbox">
+        <button class="day-option" data-day="0" role="option">Sunday</button>
+        <button class="day-option" data-day="1" role="option">Monday</button>
+        <button class="day-option" data-day="2" role="option">Tuesday</button>
+        <button class="day-option" data-day="3" role="option">Wednesday</button>
+        <button class="day-option" data-day="4" role="option">Thursday</button>
+        <button class="day-option" data-day="5" role="option">Friday</button>
+        <button class="day-option" data-day="6" role="option">Saturday</button>
+      </div>
     </div>
-    <!-- Mitte: Datum -->
-      <div class="date" id="dateLabel"></div>
   </div>
     
   <!-- Menü -->

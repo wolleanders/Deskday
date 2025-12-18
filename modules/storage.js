@@ -52,9 +52,34 @@ export function getEntryUpdatedAt(hourKey) {
 
 /* ---------------- Entries ---------------- */
 
+const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
 export function loadEntries() {
   const data = safeParse(localStorage.getItem(STORE_KEY), {});
   return (data && typeof data === 'object' && !Array.isArray(data)) ? data : {};
+}
+
+export function loadEntriesForDay(dayIndex) {
+  const dayName = WEEKDAYS[dayIndex] || 'sunday';
+  const allEntries = loadEntries();
+  // If allEntries has day structure, return that day's entries
+  if (allEntries[dayName] && typeof allEntries[dayName] === 'object') {
+    return allEntries[dayName];
+  }
+  // Fallback to empty object if day not found
+  return {};
+}
+
+export function saveEntriesForDay(dayIndex, model, { touch = true } = {}) {
+  const dayName = WEEKDAYS[dayIndex] || 'sunday';
+  const allEntries = loadEntries();
+  allEntries[dayName] = model || {};
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(allEntries));
+    if (touch) touchLocalUpdatedAt('entries');
+  } catch (e) {
+    console.error('[store] saveEntriesForDay failed', e);
+  }
 }
 
 export function saveEntries(model, { touch = true } = {}) {
