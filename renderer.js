@@ -108,8 +108,9 @@ let offset = 0, vel = 0;
 const friction = 0.035, gain = 0.045;
 let minOffset = 0, maxOffset = 0;
 
-let isEditor = false;
 let loginInProgress = false;
+let lastActivityTime = Date.now();
+let idleSnapTimer = null;
 let isBooting = true; // Flag to track if we're in boot phase
 let bootInitialized = false;
 let isFirstBoot = isFirstStartup(); // Check early, before any function runs
@@ -137,7 +138,7 @@ function applyCollapsedState(){
     row.classList.toggle('collapsed', manual || auto);
     row.classList.toggle('empty', !hasText);
   }
-  if (!isEditor) snapToCurrentHour({ smooth: true });
+  snapToCurrentHour({ smooth: true });
   recalcLayout();
   updateNowLine();
   saveCollapseState();
@@ -352,7 +353,7 @@ function startNowLineTicker() {
   const tick = () => { updateNowLine(); const jitter = Math.random()*10000 - 5000; setTimeout(tick, 60000 + jitter); };
   tick();
 }
-window.addEventListener('resize', () => { recalcLayout(); updateNowLine(); if (!isEditor) snapToCurrentHour(); });
+window.addEventListener('resize', () => { recalcLayout(); updateNowLine(); snapToCurrentHour(); });
 
 /* ------------ Mark current hour ------------ */
 function markCurrent() {
@@ -404,7 +405,6 @@ function animateToOffset(target, duration = 450) {
 }
 
 function snapToCurrentHour({ smooth = true } = {}) {
-  if (isEditor) return;
   markCurrentHour();
   recalcLayout();
   updateBounds();
@@ -480,7 +480,7 @@ function render() {
   recalcLayout();
   ensureNowLine();
   updateNowLine();
-  if (!isEditor) snapToCurrentHour({ smooth: true });
+  snapToCurrentHour({ smooth: true });
   scheduleHourlySnap();
   startNowLineTicker();
 }
@@ -499,15 +499,14 @@ function updateHourSummary(h){
 }
 function updateAllSummaries(){ for (let h=startHour; h<=endHour; h++) updateHourSummary(h); }
 
-/* ------------- Editor / mode ------------- */
-function setMode(editorOn){
-  isEditor = !!editorOn;
-  document.body.classList.toggle('editor-mode', isEditor);
-  optTE?.setAttribute('aria-pressed', String(isEditor));
-  teiBtn?.setAttribute('aria-pressed', String(isEditor));
-
-  if (!isEditor) {
-    closeAnyHourEditor(false);
+/* ------------- Activity tracking for idle snap ------------- */
+function recordActivity() {
+  // Clear existing timer
+  if (idleSnapTimer) clearTimeout(idleSnapTimer);
+  
+  // Set new idle timer - snap back after 15 seconds of inactivity
+  idleSnapTimer = setTimeout(() => {
+    closeAnyHourEditor(true);
     timetable.querySelectorAll('.hour[data-temp-open="1"]').forEach(row => {
       const idx = Array.prototype.indexOf.call(timetable.children, row);
       const h = startHour + idx;
@@ -518,17 +517,15 @@ function setMode(editorOn){
     applyCollapsedState();
     recalcLayout();
     updateNowLine();
-    snapToCurrentHour();
-  } else {
-    vel = 0;
-  }
+    snapToCurrentHour({ smooth: true });
+  }, 15000);
 }
 
-/* ------------- Scroll inertia (editor) --------------- */
-window.addEventListener('wheel', (e) => { if (!isEditor) return; if (minOffset === 0) return; vel -= e.deltaY * gain; }, { passive: true });
+/* ------------- Scroll inertia --------------- */
+window.addEventListener('wheel', (e) => { if (minOffset === 0) return; recordActivity(); vel -= e.deltaY * gain; }, { passive: true });
 
 let dragging = false, lastY = 0;
-viewport?.addEventListener('mousedown', (e) => { if (!isEditor) return; dragging = true; lastY = e.clientY; });
+viewport?.addEventListener('mousedown', (e) => { recordActivity(); dragging = true; lastY = e.clientY; });
 
 (function loop() { offset += vel; vel *= (1 - friction); if (offset > maxOffset) { offset = maxOffset; vel = 0; } if (offset < minOffset) { offset = minOffset; vel = 0; } timetable && (timetable.style.transform = `translateY(${offset}px)`); requestAnimationFrame(loop); })();
 
@@ -567,7 +564,10 @@ function closeHourEditor(hour, commit = true) {
   edit.style.display = 'none';
   view.style.display = 'block';
 
-  applyCollapsedState();
+  // Defer layout recalculation to next frame to avoid blocking
+  requestAnimationFrame(() => {
+    applyCollapsedState();
+  });
 }
 function closeAnyHourEditor(commit=true){
   const open = timetable.querySelectorAll('.txt-input');
@@ -580,10 +580,10 @@ function closeAnyHourEditor(commit=true){
 
 /* Editor clicks / interactions */
 viewport?.addEventListener('dblclick', (e) => {
-  if (!isEditor) return;
   const h = hourFromClick(e.clientY);
   const row = timetable.children[h - startHour];
   if (!row) return;
+  recordActivity();
   if (row.classList.contains('collapsed')) {
     row.classList.remove('collapsed');
     row.dataset.tempOpen = '1';
@@ -596,6 +596,7 @@ viewport?.addEventListener('dblclick', (e) => {
 timetable?.addEventListener('keydown', (e) => {
   const ta = e.target.closest?.('.txt-input');
   if (!ta) return;
+  recordActivity();
   
   // Allow Shift+Enter for new lines, but limit to 3 lines max
   if ((e.key === 'Enter') && (e.shiftKey)) {
@@ -663,7 +664,7 @@ function hourFromClick(clientY){
 function loadLocalData() {
   model = loadEntries();
   render();
-  setMode(false);
+  closeAnyHourEditor(false);
   snapToCurrentHour();
 }
 function exportLocalData() { return exportTimetable(); }
@@ -671,17 +672,12 @@ function exportLocalData() { return exportTimetable(); }
 function applyRemoteData(data, { preserveMode = true } = {}) {
   if (!data) return;
 
-  const wasEditor = isEditor;   // aktuellen Zustand merken
-
   importTimetable(data);
   model = loadEntries();
   render();
 
-  // Editor-Zustand optional beibehalten
-  if (preserveMode && wasEditor) setMode(true);
-
-  // Nur im Normalmodus automatisch zentrieren
-  if (!isEditor) snapToCurrentHour();
+  // Automatically center on current hour
+  snapToCurrentHour();
 }
 
 const cloudStatusEl = document.getElementById('cloudStatus');
@@ -1255,7 +1251,8 @@ function installAuthMutationObserver() {
         updateLoginButton('login', null);
         updateCloudStatus('local', null);
         loadLocalData();
-        setMode(false);
+        closeAnyHourEditor(false);
+        snapToCurrentHour({ smooth: true });
       }
     });
   } else {
@@ -1297,7 +1294,7 @@ async function initializeDataAndRender(user) {
     
     // 4. Finales UI-Boot (Layout, Ticker, Ready-State)
     timetable.classList.add('ready');
-    setMode(false);
+    closeAnyHourEditor(false);
     snapToCurrentHour();
     scheduleHourlySnap();
     
@@ -1468,7 +1465,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             const isOpen = !optMenu.classList.contains('hidden');
             optBtn.setAttribute('aria-expanded', String(isOpen));
             optBtn.classList.toggle('open', isOpen);
-            optTE?.classList.toggle('active', isEditor);
         });
         function closeOptionsMenu(){ if (!optMenu) return; optMenu.classList.add('hidden'); optBtn?.setAttribute('aria-expanded', 'false'); optBtn?.classList.remove('open'); }
         optMenu.addEventListener('click', (e) => { const item = e.target.closest('[data-om-item]'); if (!item) return; if (item.dataset.noClose === 'true') return; setTimeout(closeOptionsMenu, 0); });
@@ -1492,19 +1488,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         setCloseEl.addEventListener('click', (e) => { e.stopPropagation(); try { closeSet(); } catch(e){ document.getElementById('setOverlay')?.classList.add('hidden'); } });
     }
 
-    // optMin (BEIBEHALTEN)
+    // optMin (minimize to tray)
     if (optMin) optMin.addEventListener('click', () => { window.appApi?.minimizeToTray(); });
 
-    // TTE toggle (BEIBEHALTEN)
-    if (optTE) {
-        optTE.addEventListener('click', (e) => { e.stopPropagation(); setMode(!isEditor); optMenu?.classList.add('hidden'); });
-    }
-    // separate TEI button (BEIBEHALTEN)
-    if (teiBtn){
-        teiBtn.addEventListener('click', (e) => { e.stopPropagation(); setMode(!isEditor); });
-    }
-
-    // start/end overlay button (BEIBEHALTEN)
+    // start/end overlay button
     if (stBtn){
         stBtn.addEventListener('click', () => { closeAnyHourEditor(true); openSEE({start:startHour, end:endHour}); });
     }
@@ -1533,7 +1520,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         openInputs.forEach(inp => { const hour = parseInt(inp.dataset.hour, 10); closeHourEditor(hour, false); });
         closeSEE();
         applyCollapsedState();
-        if (isEditor && openInputs.length === 0) setMode(false);
     });
 
     // *Hinweis:* Die folgenden Blöcke sind REDUNDANT, da initializeDataAndRender sie abdeckt:
