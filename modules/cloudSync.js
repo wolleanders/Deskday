@@ -17,7 +17,7 @@ export function scheduleCloudSave() {
     } catch (e) {
       console.warn('[Deskday] cloud save failed', e);
     }
-  }, 1500); // 1,5 Sekunden nach der letzten Änderung
+  }, 8000); // 8 seconds after the last change
 }
 
 // Beim Login aus der Cloud holen und lokal übernehmen

@@ -219,7 +219,12 @@ function setHourText(hour, text) {
     saveEntries(model); 
     touchEntryUpdatedAt(key); // Track that this entry was modified locally
   } catch(e){ console.warn('saveEntries failed', e); }
-  try { scheduleCloudSave(); } catch(e){ /* noop */ }
+  
+  // Schedule cloud save only if no editor is open
+  const hasOpenEditor = !!timetable.querySelector('.txt-input[style*="display: block"]');
+  if (!hasOpenEditor) {
+    try { scheduleCloudSave(); } catch(e){ /* noop */ }
+  }
 }
 
 /* ---- DOM References ---- */
@@ -556,13 +561,17 @@ function closeHourEditor(hour, commit = true) {
   const view  = items.querySelector('.txt');
   const edit  = items.querySelector('.txt-input');
 
-  if (commit) {
-    setHourText(hour, edit.value);
-    view.textContent = getHourText(hour);
-  }
-
+  // Hide editor immediately for responsiveness
   edit.style.display = 'none';
   view.style.display = 'block';
+
+  // Save asynchronously if committing (deferred to next frame)
+  if (commit) {
+    requestAnimationFrame(() => {
+      setHourText(hour, edit.value);
+      view.textContent = getHourText(hour);
+    });
+  }
 
   // Defer layout recalculation to next frame to avoid blocking
   requestAnimationFrame(() => {
@@ -574,6 +583,14 @@ function closeAnyHourEditor(commit=true){
   open.forEach(ta=>{
     if (ta.style.display === 'block'){
       closeHourEditor(parseInt(ta.dataset.hour,10), commit);
+    }
+  });
+  
+  // After closing all editors, schedule cloud save if no editors remain
+  requestAnimationFrame(() => {
+    const hasOpenEditor = !!timetable.querySelector('.txt-input[style*="display: block"]');
+    if (!hasOpenEditor && commit) {
+      try { scheduleCloudSave(); } catch(e){ /* noop */ }
     }
   });
 }
