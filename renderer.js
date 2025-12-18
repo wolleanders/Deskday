@@ -771,7 +771,8 @@ function hourFromClick(clientY){
 
 /* ---------------- LOGIN / CLOUD helpers ---------------- */
 function loadLocalData() {
-  model = loadEntries();
+  allEntries = loadEntries();
+  loadCurrentDayModel();
   render();
   closeAnyHourEditor(false);
   snapToCurrentHour();
@@ -782,7 +783,8 @@ function applyRemoteData(data, { preserveMode = true } = {}) {
   if (!data) return;
 
   importTimetable(data);
-  model = loadEntries();
+  allEntries = loadEntries();
+  loadCurrentDayModel();
   render();
 
   // Automatically center on current hour
@@ -1031,7 +1033,8 @@ function startRealtimeSync(uid) {
   
   if (applied) {
     // Rebuild UI with merged data
-    model = loadEntries();
+    allEntries = loadEntries();
+    loadCurrentDayModel();
     render();
     console.log('[realtime] ✓ smart merge applied and UI updated');
   } else {
