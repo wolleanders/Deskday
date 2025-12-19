@@ -649,28 +649,20 @@ app.whenReady().then(async () => {
   createTray();
   if (process.platform === 'darwin') app.dock.hide(); // optional
 
-  // Configure auto-updater with GitHub feed URL
-  // Use GitHub releases API directly - more reliable than raw.githubusercontent.com
-  try {
-    autoUpdater.setFeedURL({
-      provider: 'github',
-      owner: 'wolleanders',
-      repo: 'Deskday'
-    });
-    console.log('[main] auto-updater configured to use GitHub releases API');
-  } catch (e) {
-    console.warn('[main] failed to set GitHub feed URL:', e.message);
-    // Fallback to raw content if needed
-    try {
-      const feedUrl = 'https://raw.githubusercontent.com/wolleanders/Deskday/main/latest.yml';
-      autoUpdater.setFeedURL({
-        provider: 'generic',
-        url: feedUrl
-      });
-      console.log('[main] fallback: using raw.githubusercontent.com');
-    } catch (e2) {
-      console.warn('[main] both feed URL methods failed:', e2.message);
-    }
+  // Configure auto-updater for private GitHub repo using token header when available
+  const updateToken = process.env.GH_UPDATE_TOKEN || process.env.GH_TOKEN;
+  autoUpdater.setFeedURL({
+    provider: 'github',
+    owner: 'wolleanders',
+    repo: 'Deskday',
+    releaseType: 'release',
+    private: true
+  });
+  if (updateToken) {
+    autoUpdater.requestHeaders = { Authorization: `token ${updateToken}` };
+    console.log('[main] auto-updater configured for private GitHub releases with auth header');
+  } else {
+    console.warn('[main] GH_UPDATE_TOKEN not set; private releases will 404. Set GH_UPDATE_TOKEN to a token with repo access.');
   }
 
   // Enable auto-updater debug logging
@@ -685,9 +677,15 @@ app.whenReady().then(async () => {
 
   // Auto-updater: check for updates after window is ready
   console.log('[main] app ready - checking for updates...');
+  if (win) {
+    win.webContents.send('updater:log', { message: 'Checking for updates...', level: 'info' });
+  }
   setTimeout(() => {
     autoUpdater.checkForUpdatesAndNotify().catch(e => {
       console.warn('[main] auto-updater check failed:', e);
+      if (win) {
+        win.webContents.send('updater:log', { message: `Update check failed: ${e.message}`, level: 'error' });
+      }
     });
   }, 2000); // 2 second delay to ensure everything is initialized
 });
@@ -734,22 +732,48 @@ ipcMain.on('minimize-to-tray', () => { if (win) win.hide(); });
 //##########################################################################################
 
 // Listen for update events and notify renderer
+autoUpdater.on('checking-for-update', () => {
+  console.log('[updater] Checking for update...');
+  if (win) {
+    win.webContents.send('updater:log', { message: 'Checking for update...', level: 'info' });
+  }
+});
+
 autoUpdater.on('update-available', (info) => {
   console.log('[updater] Update available:', info.version);
   if (win) {
+    win.webContents.send('updater:log', { message: `Update available: v${info.version}`, level: 'success' });
     win.webContents.send('update:available', { version: info.version });
+  }
+});
+
+autoUpdater.on('update-not-available', (info) => {
+  console.log('[updater] Update not available. Current version:', info.version);
+  if (win) {
+    win.webContents.send('updater:log', { message: `No updates available. Current: v${info.version}`, level: 'info' });
+  }
+});
+
+autoUpdater.on('download-progress', (progress) => {
+  console.log('[updater] Download progress:', Math.round(progress.percent) + '%');
+  if (win) {
+    win.webContents.send('updater:log', { message: `Downloading: ${Math.round(progress.percent)}%`, level: 'info' });
   }
 });
 
 autoUpdater.on('update-downloaded', (info) => {
   console.log('[updater] Update downloaded:', info.version);
   if (win) {
+    win.webContents.send('updater:log', { message: `Update v${info.version} downloaded! Ready to install.`, level: 'success' });
     win.webContents.send('update:downloaded', { version: info.version });
   }
 });
 
 autoUpdater.on('error', (err) => {
   console.warn('[updater] Error:', err);
+  if (win) {
+    win.webContents.send('updater:log', { message: `Update error: ${err.message}`, level: 'error' });
+  }
 });
 
 // IPC handler for user to install update

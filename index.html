@@ -209,7 +209,7 @@
         <button id="setLogin" data-auth-login="1" class="set-btn">Log in</button>
       </div>
       <div class="set-version">
-        <span id="appVersion" class="version-text">v0.8.0</span>
+        <span id="appVersion" class="version-text">v0.8.7</span>
       </div>
       <div class="set-footer-links">
         <a href="mailto:wolfgang.anders45@gmail.com">Support</a>
@@ -238,24 +238,26 @@
           title="Exit Editor">
     </button>
 <div class="title">
-    <!-- Back button: visible only when not on current day -->
-    <button id="backToToday" class="back-to-today hidden" aria-label="Back to today" title="Back to today">
-      ←
-    </button>
     <!-- Day selector: clickable to open dropdown -->
     <div class="day-selector">
+      <button id="backToToday" class="back-to-today hidden" aria-label="Back to today" title="Back to today">
+        ←
+      </button>
       <button id="dayDisplay" class="day-display-btn" aria-haspopup="listbox" aria-expanded="false">
-        <span id="dayLabel" class="day"></span><span class="slash">/</span><span id="dateLabel" class="date">Day</span>
+        <div class="day-display-content">
+          <span id="dayLabel" class="day"></span>
+          <span id="dateLabel" class="date">Day</span>
+        </div>
       </button>
       <!-- Weekday dropdown menu -->
       <div id="dayDropdown" class="day-dropdown hidden" role="listbox">
-        <button class="day-option" data-day="0" role="option">Sunday</button>
         <button class="day-option" data-day="1" role="option">Monday</button>
         <button class="day-option" data-day="2" role="option">Tuesday</button>
         <button class="day-option" data-day="3" role="option">Wednesday</button>
         <button class="day-option" data-day="4" role="option">Thursday</button>
         <button class="day-option" data-day="5" role="option">Friday</button>
         <button class="day-option" data-day="6" role="option">Saturday</button>
+        <button class="day-option" data-day="0" role="option">Sunday</button>
       </div>
     </div>
   </div>
@@ -336,6 +338,7 @@
         <button id="updateLaterBtn" class="btn btn-secondary">Later</button>
         <button id="updateNowBtn" class="btn btn-primary">Update Now</button>
       </div>
+      <a id="releaseNotesLink" href="#" class="release-notes-link" target="_blank">View release notes</a>
     </div>
   </div>
 

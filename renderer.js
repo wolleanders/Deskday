@@ -276,19 +276,14 @@ function switchDay(dayIndex) {
 
 function updateDayDisplay() {
   const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   
   // Update label
   dayLabel && (dayLabel.textContent = days[currentDayIndex]);
   
-  // Update date label (only show date if today, otherwise show day name)
+  // Update date label - always show today's date in format day.month
   if (dateLabel) {
-    if (currentDayIndex === realTodayIndex) {
-      const now = new Date();
-      dateLabel.textContent = `${now.getDate()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getFullYear()).slice(-2)}`;
-    } else {
-      dateLabel.textContent = dayNames[currentDayIndex];
-    }
+    const now = new Date();
+    dateLabel.textContent = `${now.getDate()}.${String(now.getMonth() + 1).padStart(2, '0')}`;
   }
   
   // Update back button visibility
@@ -1628,7 +1623,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // Day dropdown selector
+    // Auto-updater logs
+  if (window.api?.onUpdaterLog) {
+    console.log('[updater-listener] Registered updater log listener');
+    window.api.onUpdaterLog((event, data) => {
+      const prefix = '[AUTO-UPDATER]';
+      const style = data.level === 'error' ? 'color: red; font-weight: bold' : 
+                    data.level === 'success' ? 'color: green; font-weight: bold' : 
+                    'color: blue';
+      console.log(`%c${prefix} ${data.message}`, style);
+    });
+  } else {
+    console.warn('[updater-listener] window.api.onUpdaterLog NOT available');
+  }
+
+  // Day dropdown selector
     const dayDisplay = document.getElementById('dayDisplay');
     const dayDropdown = document.getElementById('dayDropdown');
     const dayOptions = document.querySelectorAll('.day-option');
@@ -1637,8 +1646,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (dayDisplay && dayDropdown) {
         dayDisplay.addEventListener('click', (e) => {
             e.stopPropagation();
-            dayDropdown.classList.toggle('hidden');
-            dayDisplay.setAttribute('aria-expanded', String(!dayDropdown.classList.contains('hidden')));
+            const isHidden = dayDropdown.classList.contains('hidden');
+            if (isHidden) {
+                // Show dropdown
+                dayDropdown.classList.remove('hidden');
+                // Force reflow to enable transition
+                void dayDropdown.offsetHeight;
+            } else {
+                // Hide dropdown
+                dayDropdown.classList.add('hidden');
+            }
+            dayDisplay.setAttribute('aria-expanded', String(isHidden));
         });
         
         dayOptions.forEach(opt => {
@@ -1737,15 +1755,21 @@ function setupAutoUpdateListeners() {
   });
 }
 
-function showUpdateDialog(version) {
+function showUpdateDialog(version, isTest = false) {
   const dialog = document.getElementById('updateDialog');
   const message = document.getElementById('updateMessage');
   const laterBtn = document.getElementById('updateLaterBtn');
   const nowBtn = document.getElementById('updateNowBtn');
+  const releaseLink = document.getElementById('releaseNotesLink');
   
   if (!dialog) return;
   
   message.textContent = `Version ${version} is now available. Would you like to download and install it?`;
+  
+  // Set release notes link
+  if (releaseLink) {
+    releaseLink.href = `https://github.com/wolleanders/Deskday/releases/tag/v${version}`;
+  }
   
   laterBtn.onclick = () => {
     dialog.classList.add('hidden');
@@ -1753,6 +1777,10 @@ function showUpdateDialog(version) {
   
   nowBtn.onclick = async () => {
     dialog.classList.add('hidden');
+    if (isTest) {
+      console.log('[debug] Test dialog - skipping actual update install');
+      return;
+    }
     showLoadingOverlay();
     try {
       await window.appApi.installUpdate?.();
@@ -1794,6 +1822,17 @@ function showUpdateDownloadedDialog(version) {
   
   dialog.classList.remove('hidden');
 }
+
+// Debug helper: test update dialog with Ctrl+Shift+U
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && e.shiftKey && e.key === 'U') {
+    console.log('[debug] Showing test update dialog');
+    showUpdateDialog('0.8.7', true);
+  }
+});
+
+// Expose for console testing
+window.testUpdateDialog = () => showUpdateDialog('0.8.7', true);
 
 /* -------------- beforeunload -------------- */
 window.addEventListener('beforeunload', () => {

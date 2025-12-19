@@ -90,6 +90,10 @@ contextBridge.exposeInMainWorld('settingsApi', {
     get: () => ipcRenderer.invoke('settings:get')
 });
 
+contextBridge.exposeInMainWorld('api', {
+    onUpdaterLog: (callback) => ipcRenderer.on('updater:log', callback)
+});
+
 contextBridge.exposeInMainWorld('__deskday_platform', {
     ipcRenderer: {
         invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),

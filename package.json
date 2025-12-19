@@ -1,6 +1,6 @@
 {
   "name": "deskday",
-  "version": "0.8.0",
+  "version": "0.8.7",
   "description": "Simple desktop schedule and time tracking app",
   "main": "main.js",
   "scripts": {
@@ -11,7 +11,8 @@
     "build:portable": "electron-builder --publish never",
     "build:clean": "rd /s /q dist 2>nul || del /f /s /q dist 2>nul || true",
     "build:prod": "npm run build:clean && npm run build:portable",
-    "dist": "electron-builder --win nsis --publish never"
+    "dist": "electron-builder --win nsis --publish never",
+    "release": "node scripts/generate-icon.js && electron-builder --win nsis --publish always"
   },
   "keywords": [],
   "author": "wolfgang anders",
